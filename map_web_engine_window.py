@@ -1,7 +1,7 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QUrl
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtCore import QUrl
 
 
 class MapWindow(QMainWindow):
@@ -17,7 +17,6 @@ class MapWindow(QMainWindow):
 
         # Create a web engine view to display the map
         self.map_view = QWebEngineView()
-        self.map_view.loadFinished.connect(self.printf)
         layout.addWidget(self.map_view)
 
         # Add a button to draw the route
@@ -37,9 +36,6 @@ class MapWindow(QMainWindow):
 
         # Load the URL in the web engine view
         self.map_view.load(QUrl(route_url))
-
-    def printf(self, *args):
-        print(args)
 
 
 if __name__ == "__main__":
