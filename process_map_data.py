@@ -2,12 +2,11 @@ import typing as tp
 import osmium
 import math
 import numpy as np
-import matplotlib.pyplot as plt
+
+__all__ = ['OSMProcessHandler']
 
 
-__all__ = ['get_adjacency_matrix_from_osm_file']
-
-R = 6371  # Earth's radius in kilometers
+R = 6371 * 1000  # Earth's radius in kilometers
 
 
 class Node(tp.NamedTuple):
@@ -74,12 +73,26 @@ class OSMProcessHandler(osmium.SimpleHandler):
         self.edge_groups = []
         self.id_to_node = {}
         self.edge_node_ids = []
+        self.adjacency_matrix = None
+        self.index_to_node = None
+        self.bounds = None
 
     def node(self, n):
-        # Define your filtering criteria here
         self.id_to_node[n.id] = Node(
             id=n.id, lon=np.radians(n.location.lon),
             lat=np.radians(n.location.lat))
+        if self.bounds is None:
+            self.bounds = {
+                "minlat": n.location.lat,
+                "minlon": n.location.lon,
+                "maxlat": n.location.lat,
+                "maxlon": n.location.lon
+            }
+        else:
+            self.bounds["minlat"] = min(self.bounds["minlat"], n.location.lat)
+            self.bounds["minlon"] = min(self.bounds["minlon"], n.location.lon)
+            self.bounds["maxlat"] = max(self.bounds["maxlat"], n.location.lat)
+            self.bounds["maxlon"] = max(self.bounds["maxlon"], n.location.lon)
 
     def way(self, way):
         node_refs = way.nodes
@@ -112,9 +125,7 @@ class OSMProcessHandler(osmium.SimpleHandler):
         for edge_group in self.edge_groups:
             edge_merge_queue = []
             for edge in edge_group.edges:
-                if edge.id == 609435533:
-                    print()
-                edge_nodes =  edge.nodes
+                edge_nodes = edge.nodes
                 if self.edge_node_ids.count(edge_nodes[0].id) < 2:
                     if not len(edge_merge_queue):
                         # no connection with any edges -> isolated component
@@ -133,40 +144,26 @@ class OSMProcessHandler(osmium.SimpleHandler):
                     edge_merge_queue.append(edge)
         return clean_edges, id_to_node_index
 
+    def get_bounds(self):
+        return [[self.bounds['minlat'], self.bounds['minlon']],
+                [self.bounds['maxlat'], self.bounds['maxlon']]]
 
-def get_adjacency_matrix_from_osm_file(filename: str) -> np.ndarray:
-    # Parse .osm file and apply filters
-    osm_handler = OSMProcessHandler()
-    osm_handler.apply_file(filename)
-    edges, id_to_node_index = osm_handler.clean()
-    # node_coordinates = []
-    # pair_coordinates = []
-    # for node_id in id_to_node_index:
-    #     node_coordinates.append(list(osm_handler.id_to_node[node_id].to_cartesian())[:-1])
-    # node_coordinates = np.array(node_coordinates)
-    # plt.figure(figsize=(8, 6))
-    # plt.scatter(node_coordinates[:, 0], node_coordinates[:, 1], color='blue', label='Random Data')
-    # plt.grid(True)
-    num_node = len(id_to_node_index)
-    adjacency_matrix = np.zeros((num_node, num_node))
-    print('number of edges', len(edges))
-    print('number of nodes', num_node)
-    for edge in edges:
-        nodes = edge.nodes
-        # pair_coordinates.append([list(nodes[0].to_cartesian())[:-1], list(nodes[1].to_cartesian())[:-1]])
-        node0_id = nodes[0].id
-        node1_id = nodes[1].id
-        node0_idx = id_to_node_index[node0_id]
-        node1_idx = id_to_node_index[node1_id]
-        adjacency_matrix[node0_idx, node1_idx] = edge.distance() \
-            if edge.merged_length is None else edge.merged_length
-    # print(np.where(adjacency_matrix[148, :] != 0.0))
-    # for idx, pair in enumerate(np.array(pair_coordinates)):
-    #     plt.plot(
-    #         pair[:, 0], pair[:, 1],
-    #         color='red', label='Sine Curve', linestyle='-')
-    # plt.show()
-    return adjacency_matrix
-
-# a = get_adjacency_matrix_from_osm_file('data/exported_map.osm')
-# print(a.shape)
+    @staticmethod
+    def read_osm_file(filename: str):
+        handler = OSMProcessHandler()
+        handler.apply_file(filename)
+        edges, id_to_node_index = handler.clean()
+        id_to_node = handler.id_to_node
+        num_node = len(id_to_node_index)
+        adjacency_matrix = np.zeros((num_node, num_node))
+        for edge in edges:
+            nodes = edge.nodes
+            node0_id = nodes[0].id
+            node1_id = nodes[1].id
+            node0_idx = id_to_node_index[node0_id]
+            node1_idx = id_to_node_index[node1_id]
+            adjacency_matrix[node0_idx, node1_idx] = edge.distance() \
+                if edge.merged_length is None else edge.merged_length
+        handler.adjacency_matrix = adjacency_matrix
+        handler.index_to_node = [id_to_node[_id] for _id in id_to_node_index]
+        return handler
