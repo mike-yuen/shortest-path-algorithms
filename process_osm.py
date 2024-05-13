@@ -115,4 +115,4 @@ def get_adjacency_matrix_from_osm_file(filename: str) -> np.ndarray:
         adjacency_matrix[node0_idx, node1_idx] = edge.distance()
     return adjacency_matrix
 
-print(get_adjacency_matrix_from_osm_file('data/exported_map.osm.osm').shape)
+print(get_adjacency_matrix_from_osm_file('data/exported_map.osm').shape)

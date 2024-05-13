@@ -1,7 +1,7 @@
 import sys
-from PySide2.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton
-from PySide2.QtWebEngineWidgets import QWebEngineView
-from PySide2.QtCore import QUrl
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtCore import QUrl
 
 
 class MapWindow(QMainWindow):
