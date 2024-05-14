@@ -1,9 +1,10 @@
 import typing as tp
-import osmium
 import math
 import numpy as np
 
-__all__ = ['OSMProcessHandler']
+from xml.etree import ElementTree
+
+__all__ = ['OSMReader']
 
 
 R = 6371 * 1000  # Earth's radius in kilometers
@@ -67,70 +68,71 @@ class EdgeGroup(tp.NamedTuple):
         return new_edge
 
 
-class OSMProcessHandler(osmium.SimpleHandler):
-    def __init__(self):
-        super().__init__()
-        self.edge_groups = []
-        self.id_to_node = {}
-        self.edge_node_ids = []
-        self.adjacency_matrix = None
-        self.index_to_node = None
-        self.bounds = None
+class OSMReader:
+    def __init__(self, edges, adjacency_matrix, index_to_node, bounds):
+        self.edges = edges
+        self.index_to_node = index_to_node
+        self.adjacency_matrix = adjacency_matrix
+        self.bounds = bounds
 
-    def node(self, n):
-        self.id_to_node[n.id] = Node(
-            id=n.id, lon=np.radians(n.location.lon),
-            lat=np.radians(n.location.lat))
-        if self.bounds is None:
-            self.bounds = {
-                "minlat": n.location.lat,
-                "minlon": n.location.lon,
-                "maxlat": n.location.lat,
-                "maxlon": n.location.lon
-            }
-        else:
-            self.bounds["minlat"] = min(self.bounds["minlat"], n.location.lat)
-            self.bounds["minlon"] = min(self.bounds["minlon"], n.location.lon)
-            self.bounds["maxlat"] = max(self.bounds["maxlat"], n.location.lat)
-            self.bounds["maxlon"] = max(self.bounds["maxlon"], n.location.lon)
+    @staticmethod
+    def parse_node(root) -> tp.Tuple[dict, dict]:
+        id_to_node = {}
+        bounds = None
+        for element in root:
+            if element.tag == 'node':
+                node_id = int(element.attrib['id'])
+                lat = float(element.attrib['lat'])
+                lon = float(element.attrib['lon'])
+                id_to_node[node_id] = Node(
+                    id=node_id, lon=np.radians(lon), lat=np.radians(lat))
+            if element.tag == 'bounds':
+                bounds = element.attrib
+        return id_to_node, bounds
 
-    def way(self, way):
-        node_refs = way.nodes
-        node_ref0 = node_refs[0]
-        node_ref1 = node_refs[-1]
-        if node_ref0.ref == node_ref1.ref:
-            # self-loop node
-            return None
-        street_name = way.tags.get('addr:street', None)
-        if street_name is None:
-            street_name = way.tags.get('name', '')
-        self.edge_node_ids.extend([n.ref for n in node_refs])
-        edges = []
-        for i in range(len(node_refs) - 1):
-            nd0 = node_refs[i]
-            nd1 = np.roll(node_refs, -1)[i]
-            node0 = Node(
-                id=nd0.ref, lon=self.id_to_node[nd0.ref].lon,
-                lat=self.id_to_node[nd0.ref].lat)
-            node1 = Node(
-                id=nd1.ref, lon=self.id_to_node[nd1.ref].lon,
-                lat=self.id_to_node[nd1.ref].lat)
-            edge = Edge(id=way.id, name=street_name, nodes=(node0, node1))
-            edges.append(edge)
-        self.edge_groups.append(EdgeGroup(edges=edges))
+    @staticmethod
+    def parse_edge(root, id_to_node: dict) -> tp.Tuple[list, list]:
+        edge_node_ids = []
+        edge_groups = []
+        for element in root:
+            if element.tag == 'way':
+                way_id = element.attrib['id']
+                node_refs = element.findall('nd')
+                node_ref0 = node_refs[0]
+                node_ref1 = node_refs[-1]
+                if node_ref0.attrib['ref'] == node_ref1.attrib['ref']:
+                    # self-loop node
+                    continue
+                edge_node_ids.extend([int(n.attrib['ref']) for n in node_refs])
+                edges = []
+                for i in range(len(node_refs) - 1):
+                    nd0 = node_refs[i]
+                    nd1 = node_refs[i + 1]
+                    node0 = Node(
+                        id=int(nd0.attrib['ref']), lon=id_to_node[int(nd0.attrib['ref'])].lon,
+                        lat=id_to_node[int(nd0.attrib['ref'])].lat)
+                    node1 = Node(
+                        id=int(nd1.attrib['ref']), lon=id_to_node[int(nd1.attrib['ref'])].lon,
+                        lat=id_to_node[int(nd1.attrib['ref'])].lat)
+                    edge = Edge(id=way_id, name='', nodes=(node0, node1))
+                    edges.append(edge)
+                edge_groups.append(EdgeGroup(edges=edges))
 
-    def clean(self) -> tp.Tuple[tp.List[Edge], dict]:
+        return edge_node_ids, edge_groups
+
+    @staticmethod
+    def clean(edge_node_ids: list, edge_groups: list) -> tp.Tuple[tp.List[Edge], dict]:
         clean_edges = []
         id_to_node_index = {}
-        for edge_group in self.edge_groups:
+        for edge_group in edge_groups:
             edge_merge_queue = []
             for edge in edge_group.edges:
                 edge_nodes = edge.nodes
-                if self.edge_node_ids.count(edge_nodes[0].id) < 2:
+                if edge_node_ids.count(edge_nodes[0].id) < 2:
                     if not len(edge_merge_queue):
                         # no connection with any edges -> isolated component
                         continue
-                if self.edge_node_ids.count(edge_nodes[1].id) > 1:
+                if edge_node_ids.count(edge_nodes[1].id) > 1:
                     if len(edge_merge_queue):
                         new_edge = EdgeGroup.merge_edges([*edge_merge_queue, edge])
                     else:
@@ -144,19 +146,16 @@ class OSMProcessHandler(osmium.SimpleHandler):
                     edge_merge_queue.append(edge)
         return clean_edges, id_to_node_index
 
-    def get_bounds(self):
-        return [[self.bounds['minlat'], self.bounds['minlon']],
-                [self.bounds['maxlat'], self.bounds['maxlon']]]
-
     @staticmethod
-    def read_osm_file(filename: str):
-        handler = OSMProcessHandler()
-        handler.apply_file(filename)
-        edges, id_to_node_index = handler.clean()
-        id_to_node = handler.id_to_node
+    def parse(filename: str):
+        tree = ElementTree.parse(filename)
+        root = tree.getroot()
+        id_to_node, bounds = OSMReader.parse_node(root)
+        edge_node_ids, edge_groups = OSMReader.parse_edge(root, id_to_node)
+        clean_edges, id_to_node_index = OSMReader.clean(edge_node_ids, edge_groups)
         num_node = len(id_to_node_index)
         adjacency_matrix = np.zeros((num_node, num_node))
-        for edge in edges:
+        for edge in clean_edges:
             nodes = edge.nodes
             node0_id = nodes[0].id
             node1_id = nodes[1].id
@@ -164,6 +163,20 @@ class OSMProcessHandler(osmium.SimpleHandler):
             node1_idx = id_to_node_index[node1_id]
             adjacency_matrix[node0_idx, node1_idx] = edge.distance() \
                 if edge.merged_length is None else edge.merged_length
-        handler.adjacency_matrix = adjacency_matrix
-        handler.index_to_node = [id_to_node[_id] for _id in id_to_node_index]
-        return handler
+        index_to_node = [id_to_node[_id] for _id in id_to_node_index]
+        return OSMReader(
+            index_to_node=index_to_node, edges=clean_edges,
+            adjacency_matrix=adjacency_matrix, bounds=bounds)
+
+    def get_coords_for_chart(self):
+        node_coords = []
+        for edge in self.edges:
+            temp = []
+            for node in edge.nodes:
+                temp.append(list(node.to_cartesian())[:-1])
+            node_coords.append(temp)
+        return node_coords
+
+    def get_array_bounds(self):
+        return [[float(self.bounds['minlat']), float(self.bounds['minlon'])],
+                [float(self.bounds['maxlat']), float(self.bounds['maxlon'])]]
