@@ -5,21 +5,23 @@ import os
 import numpy as np
 import process_map_data as pmd
 import dijkstra
+import bellman_ford
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QWidget, QGroupBox,
-    QRadioButton, QVBoxLayout, QHBoxLayout, QFileDialog, QSizePolicy
+    QRadioButton, QVBoxLayout, QHBoxLayout, QFileDialog, QSizePolicy,
+    QGraphicsSimpleTextItem, QDialog
 )
-from PySide6.QtCore import QPointF, QObject, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtCore import QPointF, QObject, Signal, Qt, QUrl
+from PySide6.QtGui import QPainter, QBrush, QPen, QFont
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCharts import QChartView, QChart, QLineSeries, QScatterSeries
 from jinja2 import Environment, FileSystemLoader
 
 # variables
-current_dir = os.path.dirname(os.path.abspath(__file__))
-file_loader = FileSystemLoader(current_dir)
-env = Environment(loader=file_loader)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+env = Environment(loader=FileSystemLoader(CURRENT_DIR))
+TEMPLATE = env.get_template('map_template.html')
 
 
 class WebEngineView(QWidget):
@@ -33,6 +35,9 @@ class WebEngineView(QWidget):
     def set_html_content(self, html: str):
         self._browser.setHtml(html)
 
+    def load(self, url: str):
+        self._browser.load(QUrl(url))
+
 
 class ScatterCommunicator(QObject):
     node_clicked_signal = Signal(int)
@@ -43,10 +48,9 @@ class ChartView(QWidget):
         super().__init__(parent)
         self._title = title
         self._scatter_series = QScatterSeries()
-        self._scatter_series.setMarkerSize(10.0)
-        self._scatter_series.doubleClicked.connect(self.on_double_clicked)
+        self._scatter_series.setMarkerSize(10)
+        self._scatter_series.hovered.connect(self.on_hovered)
         self._chart_view = QChartView()
-        self._chart_view.setRubberBand(QChartView.RubberBand.RectangleRubberBand)
         self._chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
         #
         layout = QHBoxLayout()
@@ -59,7 +63,11 @@ class ChartView(QWidget):
         #
         self._chart = None
         self.points = None
-        self.kdtree = None
+        self._kdtree = None
+        self.highlighted_series = None
+        self._labels = []
+        self.selected_series = QScatterSeries()
+        self.node_infos = None
 
     def plot(self, points: np.ndarray):
         assert points.shape[1] == 2
@@ -78,22 +86,92 @@ class ChartView(QWidget):
         self._chart.axes()[1].hide()
         self._chart_view.setChart(self._chart)
 
-    def scatter(self, points: np.ndarray):
+    def scatter(self, points: np.ndarray, node_infos=None):
         assert points.shape[1] == 2
         if self.points is None:
             self.points = points
-        self.kdtree = sp.KDTree(points)
-        for point in points:
+        self._kdtree = sp.KDTree(points)
+        for index, point in enumerate(points):
             self._scatter_series.append(*point)
         self._chart.addSeries(self._scatter_series)
+        self.node_infos = node_infos
 
     def on_double_clicked(self, point: QPointF):
-        if self.kdtree is None:
+        if self._kdtree is None:
             return
+        if self.selected_series:
+            if len(self.selected_series.points()) == 2:
+                self._chart.removeSeries(self.selected_series)
+                self.selected_series = QScatterSeries()
+        if len(self._labels) >= 2:
+            for label in self._labels:
+                self._chart.scene().removeItem(label)
+            self._labels.clear()
         x = point.x()
         y = point.y()
-        node_index = self.kdtree.query([x, y], k=1)[1]
+        node_index = self._kdtree.query([x, y], k=1)[1]
+        self.selected_series.append(point)
+        label = QGraphicsSimpleTextItem(f'({self.node_infos[node_index][0]},\n'
+                                        f'{self.node_infos[node_index][1]})')
+        font = QFont()
+        font.setPointSize(13)
+        label.setFont(font)
+        label.setBrush(QBrush(Qt.GlobalColor.black))
+        self._labels.append(label)
+        pos = self._chart.mapToPosition(point, self._scatter_series)
+        label.setPos(pos.x(), pos.y())
+        self._chart.scene().addItem(label)
+        self.selected_series.setMarkerSize(15)
+        self.selected_series.setBrush(QBrush(Qt.GlobalColor.green))
+        self.selected_series.setPen(QPen(Qt.GlobalColor.black))
+        self._chart.addSeries(self.selected_series)
+        self._chart.createDefaultAxes()
+        self._chart.axes()[0].hide()
+        self._chart.axes()[1].hide()
         self.nodeDoubleClicked.emit(node_index)
+
+    def on_hovered(self, point: QPointF):
+        if self.highlighted_series:
+            self._chart.removeSeries(self.highlighted_series)
+        self.highlighted_series = QScatterSeries()
+        self.highlighted_series.doubleClicked.connect(self.on_double_clicked)
+        self.highlighted_series.append(point)
+        self.highlighted_series.setMarkerSize(15)
+        self.highlighted_series.setBrush(QBrush(Qt.GlobalColor.yellow))
+        self.highlighted_series.setPen(QPen(Qt.GlobalColor.black))
+        self._chart.addSeries(self.highlighted_series)
+        self._chart.createDefaultAxes()
+        self._chart.axes()[0].hide()
+        self._chart.axes()[1].hide()
+
+    def reset(self):
+        self._scatter_series.clear()
+        self._chart = None
+        self.points = None
+        self._kdtree = None
+        self.highlighted_series = None
+        self._labels = []
+        self.selected_series.clear()
+        self.node_infos = None
+
+
+class OnlineMapDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._web_view = WebEngineView()
+        layout.addWidget(self._web_view)
+        self.setLayout(layout)
+        self.setWindowTitle('Online Map')
+        self.setMinimumSize(720, 480)
+
+    def find_best_way(self, start_loc: list, end_loc: list):
+        # Generate a URL to display the route using OpenStreetMap
+        route_url = (f"https://www.openstreetmap.org/directions?"
+                     f"engine=graphhopper_foot"
+                     f"&route={start_loc[0]}%2C{start_loc[1]}%3B{end_loc[0]}%2C{end_loc[1]}")
+        self._web_view.load(route_url)
 
 
 class Application(QMainWindow):
@@ -132,14 +210,15 @@ class Application(QMainWindow):
         # execute buttons
         open_osm_btn = QPushButton('Open OSM File', self)
         open_osm_btn.clicked.connect(self.load_osm_file)
-        show_result_btn = QPushButton('Show Result', self)
-        show_result_btn.clicked.connect(self.run_shortest_path_algorithm)
-        verify_result_btn = QPushButton('Verify with Online Map', self)
+        find_routes_btn = QPushButton('Find Routes', self)
+        find_routes_btn.clicked.connect(self.run_shortest_path_algorithm)
+        verify_result_btn = QPushButton('Find Routes with Online Map', self)
+        verify_result_btn.clicked.connect(self.open_online_map_dialog)
         # add widgets
         layout.addWidget(chart_and_web_widget)
         layout.addWidget(algorithm_group_box)
         layout.addWidget(open_osm_btn)
-        layout.addWidget(show_result_btn)
+        layout.addWidget(find_routes_btn)
         layout.addWidget(verify_result_btn)
         self.setCentralWidget(widget)
         self.showMaximized()
@@ -150,51 +229,60 @@ class Application(QMainWindow):
         if self.dijkstra_radio_btn.isChecked():
             shortest_paths, distances = self.run_dijkstra_algorithm()
         elif self.bellman_radio_btn.isChecked():
-            shortest_paths = self.run_bellman_ford_algorithm()
+            shortest_paths, distances = self.run_bellman_ford_algorithm()
         elif self.floyd_radio_btn.isChecked():
             shortest_paths = self.run_floyd_warshall_algorithm()
         else:
             assert False
-        template = env.get_template('map_template.html')
+
         bounds = self.reader.get_array_bounds()
         view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
-        output_html = template.render(
+        output_html = TEMPLATE.render(
             view=view, bounds=bounds,
             mark_positions=list(self.index_to_marker_positions.values()),
-            paths=shortest_paths)
+            paths=shortest_paths, distances=distances)
         self.web_view.set_html_content(output_html)
 
     def load_osm_file(self):
-        filepath = QFileDialog.getOpenFileName(self, "Open File", "/home", "OSM file (*.osm)")
+        if self.reader is not None:
+            self.chart_view.reset()
+        filepath = QFileDialog.getOpenFileName(
+            self, "Open File", "/home", "OSM file (*.osm)")
         if os.path.isfile(filepath[0]):
             self.reader = pmd.OSMReader.parse(filepath[0])
             line_coordinates = self.reader.get_line_coordinates()
             node_coordinates = self.reader.get_node_coordinates()
             self.chart_view.plot(line_coordinates)
-            self.chart_view.scatter(node_coordinates)
+            self.chart_view.scatter(
+                node_coordinates,
+                node_infos=[(node.raw_lat, node.raw_lon)
+                            for node in self.reader.index_to_node])
             #
-            template = env.get_template('map_template.html')
             bounds = self.reader.get_array_bounds()
             view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
-            output_html = template.render(view=view, bounds=bounds)
+            output_html = TEMPLATE.render(view=view, bounds=bounds)
             self.web_view.set_html_content(output_html)
 
     def render_web_ui(self, node_index):
         if self.reader is not None:
             node = self.reader.index_to_node[node_index]
-            lon = np.degrees(node.lon)
-            lat = np.degrees(node.lat)
             if len(self.index_to_marker_positions) == 2:
                 self.index_to_marker_positions.clear()
-            self.index_to_marker_positions[node_index] = [lat, lon]
+            self.index_to_marker_positions[node_index] = [node.raw_lat, node.raw_lon]
             #
-            template = env.get_template('map_template.html')
             bounds = self.reader.get_array_bounds()
             view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
-            output_html = template.render(
+            output_html = TEMPLATE.render(
                 view=view, bounds=bounds,
                 mark_positions=list(self.index_to_marker_positions.values()))
             self.web_view.set_html_content(output_html)
+
+    def open_online_map_dialog(self):
+        dialog = OnlineMapDialog(self)
+        marker_locations = list(self.index_to_marker_positions.values())
+        dialog.find_best_way(
+            start_loc=marker_locations[0], end_loc=marker_locations[1])
+        dialog.show()
 
     def run_dijkstra_algorithm(self) -> tp.Tuple[list, list]:
         assert self.reader is not None
@@ -203,8 +291,18 @@ class Application(QMainWindow):
         path, distance = dijkstra.dijkstra(graph=graph, start=start_index, end=end_index)
         return [self.reader.get_coordinates_from_node_indices(path)], [distance]
 
-    def run_bellman_ford_algorithm(self) -> tp.Union[np.ndarray, list]:
-        return []
+    def run_bellman_ford_algorithm(self) -> tp.Tuple[list, list]:
+        start_index, end_index = list(self.index_to_marker_positions.keys())
+        connections = self.reader.convert_adjacency_matrix_to_dict()
+        vertices = np.arange(len(connections.keys()))
+        graph = bellman_ford.Graph(vertices)
+        for node_index, neighbors in connections.items():
+            for neighbor_node_index, weight in neighbors:
+                graph.add_edge(node_index, neighbor_node_index, weight)
+        bf = bellman_ford.BellmanFord(graph, start_index)
+        bf.run()
+        shortest_path, distance = bf.get_shortest_path(end_index)
+        return [self.reader.get_coordinates_from_node_indices(shortest_path)], [distance]
 
     def run_floyd_warshall_algorithm(self) -> tp.Union[np.ndarray, list]:
         return []
