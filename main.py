@@ -1,131 +1,107 @@
 import sys
+import typing as tp
+import scipy.spatial as sp
 import os
-from typing import List, Tuple
+import numpy as np
+import process_map_data as pmd
+import dijkstra
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QWidget, QGroupBox,
-    QRadioButton, QVBoxLayout, QHBoxLayout, QFileDialog, QSizePolicy, QToolTip
+    QRadioButton, QVBoxLayout, QHBoxLayout, QFileDialog, QSizePolicy
 )
-from PySide6.QtCore import QUrl, QPointF
-from PySide6.QtGui import QFont, QPainter
+from PySide6.QtCore import QPointF, QObject, Signal
+from PySide6.QtGui import QPainter
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCharts import QChartView, QChart, QLineSeries, QScatterSeries
+from jinja2 import Environment, FileSystemLoader
 
-import process_map_data as pmd
-from dijkstra import dijkstra
-
-
-def generate_map_html(path):
-    """
-    Generate HTML content with dynamic path input.
-
-    Args:
-    - path (list of tuples): List of (latitude, longitude) tuples representing the path.
-
-    Returns:
-    - str: The HTML content with dynamic path input.
-    """
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>OpenStreetMap with Path</title>
-        <script src="https://cdn.jsdelivr.net/npm/leaflet@1.7.1/dist/leaflet.js"></script>
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.7.1/dist/leaflet.css" />
-        <style>
-            #map {{ height: 100vh; }}
-        </style>
-    </head>
-    <body>
-        <div id="map"></div>
-        <script>
-            var map = L.map('map').setView([{path[0][0]}, {path[0][1]}], 13); // Set initial view
-            L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-                attribution: '© OpenStreetMap contributors'
-            }}).addTo(map); // Add OSM layer
-
-            // Function to add path to the map
-            function addPath(path) {{
-                var latLngs = [];
-                path.forEach(function(node) {{
-                    latLngs.push(L.latLng(node[0], node[1]));
-                }});
-                var polyline = L.polyline(latLngs, {{color: 'blue'}}).addTo(map);
-                map.fitBounds(polyline.getBounds()); // Adjust map view to fit the path
-            }}
-
-            // Example path (replace with your path)
-            var path = [
-    """
-
-    for lat, lon in path:
-        html_content += f"                [{lat}, {lon}],\n"
-
-    html_content += """
-            ];
-
-            // Call the addPath function with the path
-            addPath(path);
-        </script>
-    </body>
-    </html>
-    """
-    return html_content
-
-
-def generate_bounding_box_map_html(bounds: list):
-    view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
-    html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>OpenStreetMap Bounding Box</title>
-            <meta charset="utf-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-            <style>
-                #map {{ height: 500px; }}
-            </style>
-        </head>
-        <body>
-    
-        <div id="map"></div>
-    
-        <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-        <script>
-            var map = L.map('map').setView([{view[0]}, {view[1]}], 15);
-    
-            L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }}).addTo(map);
-    
-            var bounds = {str(bounds)};
-            L.rectangle(bounds, {{color: "#ff7800", weight: 1}}).addTo(map);
-        </script>
-    
-        </body>
-        </html>
-    """
-    return html
+# variables
+current_dir = os.path.dirname(os.path.abspath(__file__))
+file_loader = FileSystemLoader(current_dir)
+env = Environment(loader=file_loader)
 
 
 class WebEngineView(QWidget):
-    def __init__(self, html_content, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         layout = QHBoxLayout()
-        browser = QWebEngineView()
-        browser.setHtml(html_content)
-        layout.addWidget(browser)
+        self._browser = QWebEngineView(self)
+        layout.addWidget(self._browser)
         self.setLayout(layout)
+
+    def set_html_content(self, html: str):
+        self._browser.setHtml(html)
+
+
+class ScatterCommunicator(QObject):
+    node_clicked_signal = Signal(int)
+
+
+class ChartView(QWidget):
+    def __init__(self, title=None, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._scatter_series = QScatterSeries()
+        self._scatter_series.setMarkerSize(10.0)
+        self._scatter_series.doubleClicked.connect(self.on_double_clicked)
+        self._chart_view = QChartView()
+        self._chart_view.setRubberBand(QChartView.RubberBand.RectangleRubberBand)
+        self._chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        #
+        layout = QHBoxLayout()
+        layout.addWidget(self._chart_view)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+        # signals
+        self.communicator = ScatterCommunicator()
+        self.nodeDoubleClicked = self.communicator.node_clicked_signal
+        #
+        self._chart = None
+        self.points = None
+        self.kdtree = None
+
+    def plot(self, points: np.ndarray):
+        assert points.shape[1] == 2
+        self._chart = QChart()
+        self._chart.legend().hide()
+        if self._title is not None:
+            self._chart.setTitle(self._title)
+        #
+        for nodes in points:
+            line_series = QLineSeries()
+            for point in nodes:
+                line_series.append(*point)
+            self._chart.addSeries(line_series)
+        self._chart.createDefaultAxes()
+        self._chart.axes()[0].hide()
+        self._chart.axes()[1].hide()
+        self._chart_view.setChart(self._chart)
+
+    def scatter(self, points: np.ndarray):
+        assert points.shape[1] == 2
+        if self.points is None:
+            self.points = points
+        self.kdtree = sp.KDTree(points)
+        for point in points:
+            self._scatter_series.append(*point)
+        self._chart.addSeries(self._scatter_series)
+
+    def on_double_clicked(self, point: QPointF):
+        if self.kdtree is None:
+            return
+        x = point.x()
+        y = point.y()
+        node_index = self.kdtree.query([x, y], k=1)[1]
+        self.nodeDoubleClicked.emit(node_index)
 
 
 class Application(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("OpenStreetMap with Path")
-        # loaded variables
         self.reader = None
+        self.index_to_marker_positions = {}
         #
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -133,23 +109,26 @@ class Application(QMainWindow):
         algorithm_group_box.setTitle('Algorithms')
         algorithm_group_box.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         algorithm_selection_layout = QHBoxLayout(algorithm_group_box)
-        dijkstra_radio_btn = QRadioButton(self)
-        dijkstra_radio_btn.setText('Dijkstra')
-        bellman_radio_btn = QRadioButton(self)
-        bellman_radio_btn.setText('Bellman-Ford')
-        floyd_radio_btn = QRadioButton(self)
-        floyd_radio_btn.setText('Floyd-Warshall')
-        run_dijkstra_btn = QPushButton('Dijkstra', self)
-        run_dijkstra_btn.clicked.connect(self.run_dijkstra_algorithm)
-        algorithm_selection_layout.addWidget(run_dijkstra_btn)
-        # algorithm_selection_layout.addWidget(dijkstra_radio_btn)
-        algorithm_selection_layout.addWidget(bellman_radio_btn)
-        algorithm_selection_layout.addWidget(floyd_radio_btn)
+        self.dijkstra_radio_btn = QRadioButton(self)
+        self.dijkstra_radio_btn.setText('Dijkstra')
+        self.dijkstra_radio_btn.setChecked(True)
+        self.bellman_radio_btn = QRadioButton(self)
+        self.bellman_radio_btn.setText('Bellman-Ford')
+        self.floyd_radio_btn = QRadioButton(self)
+        self.floyd_radio_btn.setText('Floyd-Warshall')
+        algorithm_selection_layout.addWidget(self.dijkstra_radio_btn)
+        algorithm_selection_layout.addWidget(self.bellman_radio_btn)
+        algorithm_selection_layout.addWidget(self.floyd_radio_btn)
         # chart and web view
         chart_and_web_widget = QWidget()
-        self.chart_web_layout = QHBoxLayout(chart_and_web_widget)
-        self.view_left = None
-        self.view_right = None
+        self.chart_view = ChartView(title='Graph', parent=self)
+        self.chart_view.nodeDoubleClicked.connect(self.render_web_ui)
+        self.web_view = WebEngineView(self)
+        chart_web_ui_layout = QHBoxLayout(chart_and_web_widget)
+        chart_web_ui_layout.setContentsMargins(0, 0, 0, 0)
+        chart_web_ui_layout.setSpacing(0)
+        chart_web_ui_layout.addWidget(self.chart_view, 1)
+        chart_web_ui_layout.addWidget(self.web_view, 1)
         # execute buttons
         open_osm_btn = QPushButton('Open OSM File', self)
         open_osm_btn.clicked.connect(self.load_osm_file)
@@ -165,83 +144,70 @@ class Application(QMainWindow):
         self.setCentralWidget(widget)
         self.showMaximized()
 
-    def run_shortest_path_algorithm(self, path: List[Tuple[int, int]] = None, start: Tuple[int, int] = None,
-                                    end: Tuple[int, int] = None):
-        if self.reader is not None:
-            path = path or [(10.7622564, 106.6569704),
-                            (10.7621586, 106.6570011),
-                            (10.7689823, 106.6525092),
-                            (10.7694154, 106.6525035),
-                            (10.7711526, 106.6529604),
-                            (10.7704293, 106.6577405),
-                            ]
-            start = start or (10.7857536, 106.6669098)
-            end = end or (10.7713016, 106.6578284)
-            self.render_result(path, start, end)
-
-    def render_result(self, path: List[Tuple[int, int]], start: Tuple[int, int], end: Tuple[int, int]):
-        web_viewer = WebEngineView(
-            html_content=generate_map_html(path), parent=self)
-        web_viewer1 = QWebEngineView()
-        start_lat, start_lon = start
-        end_lat, end_lon = end
-        # Generate a URL to display the route using OpenStreetMap
-        route_url = f"https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route={start_lat}%2C{start_lon}%3B{end_lat}%2C{end_lon}"
-        # Load the URL in the web engine view
-        web_viewer1.load(QUrl(route_url))
-        self.chart_web_layout.replaceWidget(self.view_left, web_viewer)
-        self.chart_web_layout.replaceWidget(self.view_right, web_viewer1)
+    def run_shortest_path_algorithm(self):
+        if self.reader is None or len(self.index_to_marker_positions) != 2:
+            return
+        if self.dijkstra_radio_btn.isChecked():
+            shortest_paths, distances = self.run_dijkstra_algorithm()
+        elif self.bellman_radio_btn.isChecked():
+            shortest_paths = self.run_bellman_ford_algorithm()
+        elif self.floyd_radio_btn.isChecked():
+            shortest_paths = self.run_floyd_warshall_algorithm()
+        else:
+            assert False
+        template = env.get_template('map_template.html')
+        bounds = self.reader.get_array_bounds()
+        view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
+        output_html = template.render(
+            view=view, bounds=bounds,
+            mark_positions=list(self.index_to_marker_positions.values()),
+            paths=shortest_paths)
+        self.web_view.set_html_content(output_html)
 
     def load_osm_file(self):
         filepath = QFileDialog.getOpenFileName(self, "Open File", "/home", "OSM file (*.osm)")
         if os.path.isfile(filepath[0]):
             self.reader = pmd.OSMReader.parse(filepath[0])
-            chart = QChart()
-            scatter_series = QScatterSeries()
-            scatter_series.setMarkerSize(10.0)
-            for line in self.reader.get_coords_for_chart():
-                series = QLineSeries()
-                for node in line:
-                    series.append(*node)
-                    scatter_series.append(*node)
-                chart.addSeries(series)
-                chart.addSeries(scatter_series)
-            scatter_series.hovered.connect(self.on_hover)
-            chart.legend().hide()
-            chart.createDefaultAxes()
-            chart.setTitle("Simple Line Chart")
-            chart.createDefaultAxes()
-            self.view_left = QChartView(chart)
-            self.view_left.setMouseTracking(True)
-            # Enable rubber band for zooming
-            self.view_left.setRubberBand(QChartView.RectangleRubberBand)
-            self.view_left.setDragMode(QChartView.ScrollHandDrag)
-            self.view_left.setRenderHint(QPainter.Antialiasing)
-            self.view_right = WebEngineView(
-                html_content=generate_bounding_box_map_html(self.reader.get_array_bounds()))
-            self.chart_web_layout.addWidget(self.view_left)
-            self.chart_web_layout.addWidget(self.view_right)
+            line_coordinates = self.reader.get_line_coordinates()
+            node_coordinates = self.reader.get_node_coordinates()
+            self.chart_view.plot(line_coordinates)
+            self.chart_view.scatter(node_coordinates)
+            #
+            template = env.get_template('map_template.html')
+            bounds = self.reader.get_array_bounds()
+            view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
+            output_html = template.render(view=view, bounds=bounds)
+            self.web_view.set_html_content(output_html)
 
-    def on_hover(self, point, state):
-        if state:
-            QToolTip.setFont(QFont('SansSerif', 10))
-            QToolTip.showText(self.view_left.mapToGlobal(
-                self.view_left.mapFromScene(QPointF(point.x(), point.y()))),
-                f'({point.x()}, {point.y()})')
-        else:
-            QToolTip.hideText()
+    def render_web_ui(self, node_index):
+        if self.reader is not None:
+            node = self.reader.index_to_node[node_index]
+            lon = np.degrees(node.lon)
+            lat = np.degrees(node.lat)
+            if len(self.index_to_marker_positions) == 2:
+                self.index_to_marker_positions.clear()
+            self.index_to_marker_positions[node_index] = [lat, lon]
+            #
+            template = env.get_template('map_template.html')
+            bounds = self.reader.get_array_bounds()
+            view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
+            output_html = template.render(
+                view=view, bounds=bounds,
+                mark_positions=list(self.index_to_marker_positions.values()))
+            self.web_view.set_html_content(output_html)
 
-    def run_dijkstra_algorithm(self):
-        if not self.reader:
-            return
-        graph = self.reader.convert_adjacency_matrix()
-        start = self.reader.start
-        end = self.reader.end
-        path, distance = dijkstra(graph=graph, start=start, end=end)
-        parsed_path = [self.reader.node_mapping[node] for node in path]
-        start_coord = self.reader.node_mapping[start]
-        end_coord = self.reader.node_mapping[end]
-        self.render_result(path=parsed_path, start=start_coord, end=end_coord)
+    def run_dijkstra_algorithm(self) -> tp.Tuple[list, list]:
+        assert self.reader is not None
+        graph = self.reader.convert_adjacency_matrix_to_dict()
+        start_index, end_index = list(self.index_to_marker_positions.keys())
+        path, distance = dijkstra.dijkstra(graph=graph, start=start_index, end=end_index)
+        return [self.reader.get_coordinates_from_node_indices(path)], [distance]
+
+    def run_bellman_ford_algorithm(self) -> tp.Union[np.ndarray, list]:
+        return []
+
+    def run_floyd_warshall_algorithm(self) -> tp.Union[np.ndarray, list]:
+        return []
 
 
 if __name__ == "__main__":

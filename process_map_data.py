@@ -76,9 +76,6 @@ class OSMReader:
         self.index_to_node = index_to_node
         self.adjacency_matrix = adjacency_matrix
         self.bounds = bounds
-        self.node_mapping = {node.id: (node.raw_lat, node.raw_lon) for node in index_to_node}
-        self.start = index_to_node[0].id
-        self.end = index_to_node[-1].id
 
     @staticmethod
     def parse_node(root) -> tp.Tuple[dict, dict]:
@@ -174,42 +171,56 @@ class OSMReader:
             node1_id = nodes[1].id
             node0_idx = id_to_node_index[node0_id]
             node1_idx = id_to_node_index[node1_id]
-            adjacency_matrix[node0_idx, node1_idx] = edge.distance() \
-                if edge.merged_length is None else edge.merged_length
+            weight = edge.distance() if edge.merged_length is None else edge.merged_length
+            adjacency_matrix[node0_idx, node1_idx] = weight
+            adjacency_matrix[node1_idx, node0_idx] = weight
         index_to_node = [id_to_node[_id] for _id in id_to_node_index]
         return OSMReader(
             index_to_node=index_to_node, edges=clean_edges,
             adjacency_matrix=adjacency_matrix, bounds=bounds)
 
-    def get_coords_for_chart(self):
-        node_coords = []
+    def get_line_coordinates(self) -> np.ndarray:
+        line_node_coordinates = []
         for edge in self.edges:
             temp = []
             for node in edge.nodes:
                 temp.append(list(node.to_cartesian())[:-1])
-            node_coords.append(temp)
-        return node_coords
+            line_node_coordinates.append(temp)
+        return np.array(line_node_coordinates)
+
+    def get_node_coordinates(self) -> np.ndarray:
+        node_coordinates = []
+        for node in self.index_to_node:
+            node_coordinates.append(list(node.to_cartesian())[:-1])
+        return np.array(node_coordinates)
 
     def get_array_bounds(self):
         return [[float(self.bounds['minlat']), float(self.bounds['minlon'])],
                 [float(self.bounds['maxlat']), float(self.bounds['maxlon'])]]
 
-    def convert_adjacency_matrix(self):
+    def convert_adjacency_matrix_to_dict(self) -> dict:
         adjacency_matrix = self.adjacency_matrix
         graph = {}
-        vertices = [node.id for node in self.index_to_node]
 
-        for i in range(len(vertices)):
-            vertex = vertices[i]
+        for i in range(len(self.index_to_node)):
+            vertex = i
             neighbors = []
 
             for j in range(len(adjacency_matrix[i])):
                 weight = adjacency_matrix[i][j]
 
                 if weight != 0:
-                    neighbor = vertices[j]
+                    neighbor = j
                     neighbors.append((neighbor, weight))
 
+            assert len(neighbors) > 0
             graph[vertex] = neighbors
 
         return graph
+
+    def get_coordinates_from_node_indices(self, node_indices: tp.Union[list, np.ndarray]):
+        coordinates = []
+        for node_index in node_indices:
+            node = self.index_to_node[node_index]
+            coordinates.append([node.raw_lat, node.raw_lon])
+        return coordinates
