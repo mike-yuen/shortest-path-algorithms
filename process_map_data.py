@@ -14,6 +14,8 @@ class Node(tp.NamedTuple):
     id: int
     lon: float
     lat: float
+    raw_lon: float
+    raw_lat: float
 
     # Function to convert latitude and longitude to Cartesian coordinates
     def to_cartesian(self):
@@ -74,6 +76,9 @@ class OSMReader:
         self.index_to_node = index_to_node
         self.adjacency_matrix = adjacency_matrix
         self.bounds = bounds
+        self.node_mapping = {node.id: (node.raw_lat, node.raw_lon) for node in index_to_node}
+        self.start = index_to_node[0].id
+        self.end = index_to_node[-1].id
 
     @staticmethod
     def parse_node(root) -> tp.Tuple[dict, dict]:
@@ -85,7 +90,7 @@ class OSMReader:
                 lat = float(element.attrib['lat'])
                 lon = float(element.attrib['lon'])
                 id_to_node[node_id] = Node(
-                    id=node_id, lon=np.radians(lon), lat=np.radians(lat))
+                    id=node_id, lon=np.radians(lon), lat=np.radians(lat), raw_lon=lon, raw_lat=lat)
             if element.tag == 'bounds':
                 bounds = element.attrib
         return id_to_node, bounds
@@ -109,11 +114,19 @@ class OSMReader:
                     nd0 = node_refs[i]
                     nd1 = node_refs[i + 1]
                     node0 = Node(
-                        id=int(nd0.attrib['ref']), lon=id_to_node[int(nd0.attrib['ref'])].lon,
-                        lat=id_to_node[int(nd0.attrib['ref'])].lat)
+                        id=int(nd0.attrib['ref']),
+                        lon=id_to_node[int(nd0.attrib['ref'])].lon,
+                        lat=id_to_node[int(nd0.attrib['ref'])].lat,
+                        raw_lon=id_to_node[int(nd0.attrib['ref'])].raw_lon,
+                        raw_lat=id_to_node[int(nd0.attrib['ref'])].raw_lat,
+                    )
                     node1 = Node(
-                        id=int(nd1.attrib['ref']), lon=id_to_node[int(nd1.attrib['ref'])].lon,
-                        lat=id_to_node[int(nd1.attrib['ref'])].lat)
+                        id=int(nd1.attrib['ref']),
+                        lon=id_to_node[int(nd1.attrib['ref'])].lon,
+                        lat=id_to_node[int(nd1.attrib['ref'])].lat,
+                        raw_lon=id_to_node[int(nd1.attrib['ref'])].raw_lon,
+                        raw_lat=id_to_node[int(nd1.attrib['ref'])].raw_lat,
+                    )
                     edge = Edge(id=way_id, name='', nodes=(node0, node1))
                     edges.append(edge)
                 edge_groups.append(EdgeGroup(edges=edges))
@@ -180,3 +193,23 @@ class OSMReader:
     def get_array_bounds(self):
         return [[float(self.bounds['minlat']), float(self.bounds['minlon'])],
                 [float(self.bounds['maxlat']), float(self.bounds['maxlon'])]]
+
+    def convert_adjacency_matrix(self):
+        adjacency_matrix = self.adjacency_matrix
+        graph = {}
+        vertices = [node.id for node in self.index_to_node]
+
+        for i in range(len(vertices)):
+            vertex = vertices[i]
+            neighbors = []
+
+            for j in range(len(adjacency_matrix[i])):
+                weight = adjacency_matrix[i][j]
+
+                if weight != 0:
+                    neighbor = vertices[j]
+                    neighbors.append((neighbor, weight))
+
+            graph[vertex] = neighbors
+
+        return graph

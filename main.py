@@ -1,5 +1,6 @@
 import sys
 import os
+from typing import List, Tuple
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QWidget, QGroupBox,
@@ -11,6 +12,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCharts import QChartView, QChart, QLineSeries, QScatterSeries
 
 import process_map_data as pmd
+from dijkstra import dijkstra
 
 
 def generate_map_html(path):
@@ -137,7 +139,10 @@ class Application(QMainWindow):
         bellman_radio_btn.setText('Bellman-Ford')
         floyd_radio_btn = QRadioButton(self)
         floyd_radio_btn.setText('Floyd-Warshall')
-        algorithm_selection_layout.addWidget(dijkstra_radio_btn)
+        run_dijkstra_btn = QPushButton('Dijkstra', self)
+        run_dijkstra_btn.clicked.connect(self.run_dijkstra_algorithm)
+        algorithm_selection_layout.addWidget(run_dijkstra_btn)
+        # algorithm_selection_layout.addWidget(dijkstra_radio_btn)
         algorithm_selection_layout.addWidget(bellman_radio_btn)
         algorithm_selection_layout.addWidget(floyd_radio_btn)
         # chart and web view
@@ -160,26 +165,32 @@ class Application(QMainWindow):
         self.setCentralWidget(widget)
         self.showMaximized()
 
-    def run_shortest_path_algorithm(self):
+    def run_shortest_path_algorithm(self, path: List[Tuple[int, int]] = None, start: Tuple[int, int] = None,
+                                    end: Tuple[int, int] = None):
         if self.reader is not None:
-            path = [(10.7622564, 106.6569704),
-                    (10.7621586, 106.6570011),
-                    (10.7689823, 106.6525092),
-                    (10.7694154, 106.6525035),
-                    (10.7711526, 106.6529604),
-                    (10.7704293, 106.6577405),
-                    ]
-            web_viewer = WebEngineView(
-                html_content=generate_map_html(path), parent=self)
-            web_viewer1 = QWebEngineView()
-            start_lat, start_lon = 10.7857536, 106.6669098
-            end_lat, end_lon = 10.7713016, 106.6578284
-            # Generate a URL to display the route using OpenStreetMap
-            route_url = f"https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route={start_lat}%2C{start_lon}%3B{end_lat}%2C{end_lon}"
-            # Load the URL in the web engine view
-            web_viewer1.load(QUrl(route_url))
-            self.chart_web_layout.replaceWidget(self.view_left, web_viewer)
-            self.chart_web_layout.replaceWidget(self.view_right, web_viewer1)
+            path = path or [(10.7622564, 106.6569704),
+                            (10.7621586, 106.6570011),
+                            (10.7689823, 106.6525092),
+                            (10.7694154, 106.6525035),
+                            (10.7711526, 106.6529604),
+                            (10.7704293, 106.6577405),
+                            ]
+            start = start or (10.7857536, 106.6669098)
+            end = end or (10.7713016, 106.6578284)
+            self.render_result(path, start, end)
+
+    def render_result(self, path: List[Tuple[int, int]], start: Tuple[int, int], end: Tuple[int, int]):
+        web_viewer = WebEngineView(
+            html_content=generate_map_html(path), parent=self)
+        web_viewer1 = QWebEngineView()
+        start_lat, start_lon = start
+        end_lat, end_lon = end
+        # Generate a URL to display the route using OpenStreetMap
+        route_url = f"https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route={start_lat}%2C{start_lon}%3B{end_lat}%2C{end_lon}"
+        # Load the URL in the web engine view
+        web_viewer1.load(QUrl(route_url))
+        self.chart_web_layout.replaceWidget(self.view_left, web_viewer)
+        self.chart_web_layout.replaceWidget(self.view_right, web_viewer1)
 
     def load_osm_file(self):
         filepath = QFileDialog.getOpenFileName(self, "Open File", "/home", "OSM file (*.osm)")
@@ -216,9 +227,22 @@ class Application(QMainWindow):
             QToolTip.setFont(QFont('SansSerif', 10))
             QToolTip.showText(self.view_left.mapToGlobal(
                 self.view_left.mapFromScene(QPointF(point.x(), point.y()))),
-                              f'({point.x()}, {point.y()})')
+                f'({point.x()}, {point.y()})')
         else:
             QToolTip.hideText()
+
+    def run_dijkstra_algorithm(self):
+        if not self.reader:
+            return
+        graph = self.reader.convert_adjacency_matrix()
+        start = self.reader.start
+        end = self.reader.end
+        path, distance = dijkstra(graph=graph, start=start, end=end)
+        parsed_path = [self.reader.node_mapping[node] for node in path]
+        start_coord = self.reader.node_mapping[start]
+        end_coord = self.reader.node_mapping[end]
+        self.render_result(path=parsed_path, start=start_coord, end=end_coord)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
