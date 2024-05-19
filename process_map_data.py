@@ -31,15 +31,18 @@ class Edge(tp.NamedTuple):
     id: str
     nodes: tp.Tuple[Node, Node]
     name: str
+    is_oneway: bool
     merged_length: tp.Union[float, None] = None
 
     def merge_with(self, other):
         if self == other:
             return self
         assert self.nodes[1] == other.nodes[0]
+        assert self.is_oneway is other.is_oneway
         return Edge(
             id=self.id, nodes=(self.nodes[0], other.nodes[1]),
-            name=self.name, merged_length=self.distance() + other.distance())
+            name=self.name, is_oneway=self.is_oneway,
+            merged_length=self.distance() + other.distance())
 
     def distance(self) -> float:
         node1, node2 = self.nodes
@@ -77,6 +80,17 @@ class OSMReader:
         self.bounds = bounds
 
     @staticmethod
+    def is_oneway_edge(element) -> bool:
+        is_oneway = False
+        tags = element.findall('tag')
+        for tag in tags:
+            attrib = tag.attrib
+            if attrib['k'] == 'oneway' and attrib['v'] == 'yes':
+                is_oneway = True
+                break
+        return is_oneway
+
+    @staticmethod
     def parse_node(root) -> tp.Tuple[dict, dict]:
         id_to_node = {}
         bounds = None
@@ -105,6 +119,7 @@ class OSMReader:
                     # self-loop node
                     continue
                 edge_node_ids.extend([int(n.attrib['ref']) for n in node_refs])
+                is_oneway_edge = OSMReader.is_oneway_edge(element)
                 edges = []
                 for i in range(len(node_refs) - 1):
                     nd0 = node_refs[i]
@@ -123,7 +138,7 @@ class OSMReader:
                         raw_lon=id_to_node[int(nd1.attrib['ref'])].raw_lon,
                         raw_lat=id_to_node[int(nd1.attrib['ref'])].raw_lat,
                     )
-                    edge = Edge(id=way_id, name='', nodes=(node0, node1))
+                    edge = Edge(id=way_id, name='', nodes=(node0, node1), is_oneway=is_oneway_edge)
                     edges.append(edge)
                 edge_groups.append(EdgeGroup(edges=edges))
 
@@ -172,7 +187,8 @@ class OSMReader:
             node1_idx = id_to_node_index[node1_id]
             weight = edge.distance() if edge.merged_length is None else edge.merged_length
             adjacency_matrix[node0_idx, node1_idx] = weight
-            adjacency_matrix[node1_idx, node0_idx] = weight
+            if not edge.is_oneway:
+                adjacency_matrix[node1_idx, node0_idx] = weight
         index_to_node = [id_to_node[_id] for _id in id_to_node_index]
         return OSMReader(
             index_to_node=index_to_node, edges=clean_edges,
@@ -212,7 +228,7 @@ class OSMReader:
                     neighbor = j
                     neighbors.append((neighbor, weight))
 
-            assert len(neighbors) > 0
+            # assert len(neighbors) > 0 # directed graph ???
             graph[vertex] = neighbors
 
         return graph
