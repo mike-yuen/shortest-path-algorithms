@@ -48,7 +48,7 @@ class ChartView(QWidget):
         super().__init__(parent)
         self._title = title
         self._scatter_series = QScatterSeries()
-        self._scatter_series.setMarkerSize(10)
+        self._scatter_series.setMarkerSize(5)
         self._scatter_series.hovered.connect(self.on_hovered)
         self._chart_view = QChartView()
         self._chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -58,16 +58,16 @@ class ChartView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(layout)
         # signals
-        self.communicator = ScatterCommunicator()
-        self.nodeDoubleClicked = self.communicator.node_clicked_signal
+        self._communicator = ScatterCommunicator()
+        self.nodeClicked = self._communicator.node_clicked_signal
         #
         self._chart = None
-        self.points = None
+        self._points = None
         self._kdtree = None
-        self.highlighted_series = None
+        self._highlighted_series = None
         self._labels = []
-        self.selected_series = QScatterSeries()
-        self.node_infos = None
+        self._selected_series = QScatterSeries()
+        self._node_infos = None
 
     def plot(self, points: np.ndarray):
         assert points.shape[1] == 2
@@ -88,21 +88,21 @@ class ChartView(QWidget):
 
     def scatter(self, points: np.ndarray, node_infos=None):
         assert points.shape[1] == 2
-        if self.points is None:
-            self.points = points
+        if self._points is None:
+            self._points = points
         self._kdtree = sp.KDTree(points)
         for index, point in enumerate(points):
             self._scatter_series.append(*point)
         self._chart.addSeries(self._scatter_series)
-        self.node_infos = node_infos
+        self._node_infos = node_infos
 
-    def on_double_clicked(self, point: QPointF):
+    def on_node_clicked(self, point: QPointF):
         if self._kdtree is None:
             return
-        if self.selected_series:
-            if len(self.selected_series.points()) == 2:
-                self._chart.removeSeries(self.selected_series)
-                self.selected_series = QScatterSeries()
+        if self._selected_series:
+            if len(self._selected_series.points()) == 2:
+                self._chart.removeSeries(self._selected_series)
+                self._selected_series = QScatterSeries()
         if len(self._labels) >= 2:
             for label in self._labels:
                 self._chart.scene().removeItem(label)
@@ -110,9 +110,9 @@ class ChartView(QWidget):
         x = point.x()
         y = point.y()
         node_index = self._kdtree.query([x, y], k=1)[1]
-        self.selected_series.append(point)
-        label = QGraphicsSimpleTextItem(f'({self.node_infos[node_index][0]},\n'
-                                        f'{self.node_infos[node_index][1]})')
+        self._selected_series.append(point)
+        label = QGraphicsSimpleTextItem(f'({self._node_infos[node_index][0]},\n'
+                                        f'{self._node_infos[node_index][1]})')
         font = QFont()
         font.setPointSize(13)
         label.setFont(font)
@@ -121,25 +121,25 @@ class ChartView(QWidget):
         pos = self._chart.mapToPosition(point, self._scatter_series)
         label.setPos(pos.x(), pos.y())
         self._chart.scene().addItem(label)
-        self.selected_series.setMarkerSize(15)
-        self.selected_series.setBrush(QBrush(Qt.GlobalColor.green))
-        self.selected_series.setPen(QPen(Qt.GlobalColor.black))
-        self._chart.addSeries(self.selected_series)
+        self._selected_series.setMarkerSize(10)
+        self._selected_series.setBrush(QBrush(Qt.GlobalColor.green))
+        self._selected_series.setPen(QPen(Qt.GlobalColor.black))
+        self._chart.addSeries(self._selected_series)
         self._chart.createDefaultAxes()
         self._chart.axes()[0].hide()
         self._chart.axes()[1].hide()
-        self.nodeDoubleClicked.emit(node_index)
+        self.nodeClicked.emit(node_index)
 
     def on_hovered(self, point: QPointF):
-        if self.highlighted_series:
-            self._chart.removeSeries(self.highlighted_series)
-        self.highlighted_series = QScatterSeries()
-        self.highlighted_series.doubleClicked.connect(self.on_double_clicked)
-        self.highlighted_series.append(point)
-        self.highlighted_series.setMarkerSize(15)
-        self.highlighted_series.setBrush(QBrush(Qt.GlobalColor.yellow))
-        self.highlighted_series.setPen(QPen(Qt.GlobalColor.black))
-        self._chart.addSeries(self.highlighted_series)
+        if self._highlighted_series:
+            self._chart.removeSeries(self._highlighted_series)
+        self._highlighted_series = QScatterSeries()
+        self._highlighted_series.clicked.connect(self.on_node_clicked)
+        self._highlighted_series.append(point)
+        self._highlighted_series.setMarkerSize(10)
+        self._highlighted_series.setBrush(QBrush(Qt.GlobalColor.yellow))
+        self._highlighted_series.setPen(QPen(Qt.GlobalColor.black))
+        self._chart.addSeries(self._highlighted_series)
         self._chart.createDefaultAxes()
         self._chart.axes()[0].hide()
         self._chart.axes()[1].hide()
@@ -147,12 +147,12 @@ class ChartView(QWidget):
     def reset(self):
         self._scatter_series.clear()
         self._chart = None
-        self.points = None
+        self._points = None
         self._kdtree = None
-        self.highlighted_series = None
+        self._highlighted_series = None
         self._labels = []
-        self.selected_series.clear()
-        self.node_infos = None
+        self._selected_series.clear()
+        self._node_infos = None
 
 
 class OnlineMapDialog(QDialog):
@@ -200,7 +200,7 @@ class Application(QMainWindow):
         # chart and web view
         chart_and_web_widget = QWidget()
         self.chart_view = ChartView(title='Graph', parent=self)
-        self.chart_view.nodeDoubleClicked.connect(self.render_web_ui)
+        self.chart_view.nodeClicked.connect(self.render_web_ui)
         self.web_view = WebEngineView(self)
         chart_web_ui_layout = QHBoxLayout(chart_and_web_widget)
         chart_web_ui_layout.setContentsMargins(0, 0, 0, 0)
@@ -247,7 +247,7 @@ class Application(QMainWindow):
         if self.reader is not None:
             self.chart_view.reset()
         filepath = QFileDialog.getOpenFileName(
-            self, "Open File", "/home", "OSM file (*.osm)")
+            self, "Open File", CURRENT_DIR, "OSM file (*.osm)")
         if os.path.isfile(filepath[0]):
             self.reader = pmd.OSMReader.parse(filepath[0])
             line_coordinates = self.reader.get_line_coordinates()

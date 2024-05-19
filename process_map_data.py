@@ -1,6 +1,6 @@
 import typing as tp
-import math
 import numpy as np
+import pyproj
 
 from xml.etree import ElementTree
 
@@ -8,6 +8,7 @@ __all__ = ['OSMReader']
 
 
 R = 6371 * 1000  # Earth's radius in kilometers
+TRANSFORMER = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3857")
 
 
 class Node(tp.NamedTuple):
@@ -19,10 +20,8 @@ class Node(tp.NamedTuple):
 
     # Function to convert latitude and longitude to Cartesian coordinates
     def to_cartesian(self):
-        x = R * math.cos(self.lat) * math.cos(self.lon)
-        y = R * math.cos(self.lat) * math.sin(self.lon)
-        z = R * math.sin(self.lat)
-        return x, y, z
+        x, y = TRANSFORMER.transform(self.raw_lat, self.raw_lon)
+        return x, y, 0
 
     def __eq__(self, other):
         return self.id == other.id

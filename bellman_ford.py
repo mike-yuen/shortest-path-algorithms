@@ -31,13 +31,13 @@ class BellmanFord:
 
     def get_shortest_path(self, destination):
         path = []
-        distance = 0.
+        distances = []
         while destination != self.source:
             path.append(destination)
-            distance += self.distances[destination]
             destination = self.predecessors[destination]
+            distances.append(self.distances[destination])
         path.append(self.source)
-        return path[::-1], distance
+        return path[::-1], distances[0]
 
 
 if __name__ == '__main__':
