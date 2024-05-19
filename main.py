@@ -185,7 +185,8 @@ class Application(QMainWindow):
         layout = QVBoxLayout(widget)
         algorithm_group_box = QGroupBox()
         algorithm_group_box.setTitle('Algorithms')
-        algorithm_group_box.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        algorithm_group_box.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         algorithm_selection_layout = QHBoxLayout(algorithm_group_box)
         self.dijkstra_radio_btn = QRadioButton(self)
         self.dijkstra_radio_btn.setText('Dijkstra')
@@ -236,7 +237,8 @@ class Application(QMainWindow):
             assert False
 
         bounds = self.reader.get_array_bounds()
-        view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
+        view = [(bounds[0][0] + bounds[1][0]) / 2,
+                (bounds[0][1] + bounds[1][1]) / 2]
         output_html = TEMPLATE.render(
             view=view, bounds=bounds,
             mark_positions=list(self.index_to_marker_positions.values()),
@@ -259,7 +261,8 @@ class Application(QMainWindow):
                             for node in self.reader.index_to_node])
             #
             bounds = self.reader.get_array_bounds()
-            view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
+            view = [(bounds[0][0] + bounds[1][0]) / 2,
+                    (bounds[0][1] + bounds[1][1]) / 2]
             output_html = TEMPLATE.render(view=view, bounds=bounds)
             self.web_view.set_html_content(output_html)
 
@@ -268,10 +271,12 @@ class Application(QMainWindow):
             node = self.reader.index_to_node[node_index]
             if len(self.index_to_marker_positions) == 2:
                 self.index_to_marker_positions.clear()
-            self.index_to_marker_positions[node_index] = [node.raw_lat, node.raw_lon]
+            self.index_to_marker_positions[node_index] = [
+                node.raw_lat, node.raw_lon]
             #
             bounds = self.reader.get_array_bounds()
-            view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
+            view = [(bounds[0][0] + bounds[1][0]) / 2,
+                    (bounds[0][1] + bounds[1][1]) / 2]
             output_html = TEMPLATE.render(
                 view=view, bounds=bounds,
                 mark_positions=list(self.index_to_marker_positions.values()))
@@ -288,21 +293,18 @@ class Application(QMainWindow):
         assert self.reader is not None
         graph = self.reader.convert_adjacency_matrix_to_dict()
         start_index, end_index = list(self.index_to_marker_positions.keys())
-        path, distance = dijkstra.dijkstra(graph=graph, start=start_index, end=end_index)
+        path, distance = dijkstra.dijkstra(
+            graph=graph, start=start_index, end=end_index)
         return [self.reader.get_coordinates_from_node_indices(path)], [distance]
 
     def run_bellman_ford_algorithm(self) -> tp.Tuple[list, list]:
+        assert self.reader is not None
+        graph = self.reader.convert_adjacency_matrix_to_dict()
         start_index, end_index = list(self.index_to_marker_positions.keys())
-        connections = self.reader.convert_adjacency_matrix_to_dict()
-        vertices = np.arange(len(connections.keys()))
-        graph = bellman_ford.Graph(vertices)
-        for node_index, neighbors in connections.items():
-            for neighbor_node_index, weight in neighbors:
-                graph.add_edge(node_index, neighbor_node_index, weight)
-        bf = bellman_ford.BellmanFord(graph, start_index)
-        bf.run()
-        shortest_path, distance = bf.get_shortest_path(end_index)
-        return [self.reader.get_coordinates_from_node_indices(shortest_path)], [distance]
+        path, distance = bellman_ford.bellman_ford(
+            graph=graph, start=start_index, end=end_index)
+        print(path)
+        return [self.reader.get_coordinates_from_node_indices(path)], [distance]
 
     def run_floyd_warshall_algorithm(self) -> tp.Union[np.ndarray, list]:
         return []
