@@ -5,6 +5,7 @@ import os
 import numpy as np
 import process_map_data as pmd
 import dijkstra
+import bellman_ford
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QWidget, QGroupBox,
@@ -46,7 +47,8 @@ class ChartView(QWidget):
         self._scatter_series.setMarkerSize(10.0)
         self._scatter_series.doubleClicked.connect(self.on_double_clicked)
         self._chart_view = QChartView()
-        self._chart_view.setRubberBand(QChartView.RubberBand.RectangleRubberBand)
+        self._chart_view.setRubberBand(
+            QChartView.RubberBand.RectangleRubberBand)
         self._chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
         #
         layout = QHBoxLayout()
@@ -107,7 +109,8 @@ class Application(QMainWindow):
         layout = QVBoxLayout(widget)
         algorithm_group_box = QGroupBox()
         algorithm_group_box.setTitle('Algorithms')
-        algorithm_group_box.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        algorithm_group_box.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         algorithm_selection_layout = QHBoxLayout(algorithm_group_box)
         self.dijkstra_radio_btn = QRadioButton(self)
         self.dijkstra_radio_btn.setText('Dijkstra')
@@ -150,14 +153,15 @@ class Application(QMainWindow):
         if self.dijkstra_radio_btn.isChecked():
             shortest_paths, distances = self.run_dijkstra_algorithm()
         elif self.bellman_radio_btn.isChecked():
-            shortest_paths = self.run_bellman_ford_algorithm()
+            shortest_paths, distances = self.run_bellman_ford_algorithm()
         elif self.floyd_radio_btn.isChecked():
             shortest_paths = self.run_floyd_warshall_algorithm()
         else:
             assert False
         template = env.get_template('map_template.html')
         bounds = self.reader.get_array_bounds()
-        view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
+        view = [(bounds[0][0] + bounds[1][0]) / 2,
+                 (bounds[0][1] + bounds[1][1]) / 2]
         output_html = template.render(
             view=view, bounds=bounds,
             mark_positions=list(self.index_to_marker_positions.values()),
@@ -165,7 +169,8 @@ class Application(QMainWindow):
         self.web_view.set_html_content(output_html)
 
     def load_osm_file(self):
-        filepath = QFileDialog.getOpenFileName(self, "Open File", "/home", "OSM file (*.osm)")
+        filepath = QFileDialog.getOpenFileName(
+            self, "Open File", "/home", "OSM file (*.osm)")
         if os.path.isfile(filepath[0]):
             self.reader = pmd.OSMReader.parse(filepath[0])
             line_coordinates = self.reader.get_line_coordinates()
@@ -175,7 +180,8 @@ class Application(QMainWindow):
             #
             template = env.get_template('map_template.html')
             bounds = self.reader.get_array_bounds()
-            view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
+            view = [(bounds[0][0] + bounds[1][0]) / 2,
+                     (bounds[0][1] + bounds[1][1]) / 2]
             output_html = template.render(view=view, bounds=bounds)
             self.web_view.set_html_content(output_html)
 
@@ -190,7 +196,8 @@ class Application(QMainWindow):
             #
             template = env.get_template('map_template.html')
             bounds = self.reader.get_array_bounds()
-            view = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
+            view = [(bounds[0][0] + bounds[1][0]) / 2,
+                     (bounds[0][1] + bounds[1][1]) / 2]
             output_html = template.render(
                 view=view, bounds=bounds,
                 mark_positions=list(self.index_to_marker_positions.values()))
@@ -200,11 +207,17 @@ class Application(QMainWindow):
         assert self.reader is not None
         graph = self.reader.convert_adjacency_matrix_to_dict()
         start_index, end_index = list(self.index_to_marker_positions.keys())
-        path, distance = dijkstra.dijkstra(graph=graph, start=start_index, end=end_index)
+        path, distance = dijkstra.dijkstra(
+            graph=graph, start=start_index, end=end_index)
         return [self.reader.get_coordinates_from_node_indices(path)], [distance]
 
-    def run_bellman_ford_algorithm(self) -> tp.Union[np.ndarray, list]:
-        return []
+    def run_bellman_ford_algorithm(self) -> tp.Tuple[list, list]:
+        assert self.reader is not None
+        graph = self.reader.convert_adjacency_matrix_to_dict()
+        start_index, end_index = list(self.index_to_marker_positions.keys())
+        path, distance = bellman_ford.bellman_ford(graph=graph, start=start_index, end=end_index)
+        print(path)
+        return [self.reader.get_coordinates_from_node_indices(path)], [distance]
 
     def run_floyd_warshall_algorithm(self) -> tp.Union[np.ndarray, list]:
         return []
