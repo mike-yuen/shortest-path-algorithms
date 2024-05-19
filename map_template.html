@@ -5,13 +5,14 @@
             <meta charset="utf-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+            <script src="https://cdn.jsdelivr.net/npm/leaflet@1.7.1/dist/leaflet.js"></script>
+            <script src="https://cdn.jsdelivr.net/gh/makinacorpus/Leaflet.TextPath/leaflet.textpath.js"></script>
             <style>
-                #map { height: 500px; }
+                html, body, #map { height: 100%; margin: 0; padding: 0; }
             </style>
     </head>
     <body>
         <div id="map"></div>
-        <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
         <script>
             var map = L.map('map').setView({{view}}, 15);
 
@@ -46,17 +47,18 @@
                 return `#${randomColor.padStart(6, '0')}`;
             }
 
-            function addPath(path) {
+            function addPath(path, distance) {
                 var latLngs = [];
                 path.forEach(function(node) {
                     latLngs.push(L.latLng(node[0], node[1]));
                 });
                 var polyline = L.polyline(latLngs, {color: getRandomColor()}).addTo(map);
+                polyline.setText(Math.floor(distance, 2).toString() + ' m', {center: true, offset: 20});
                 map.fitBounds(polyline.getBounds());
             }
             {% if paths %}
                 {% for path in paths %}
-                    addPath({{path}});
+                    addPath({{path}}, {{distances[loop.index0]}});
                 {% endfor %}
             {% endif %}
         </script>
