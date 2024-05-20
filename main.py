@@ -6,6 +6,7 @@ import numpy as np
 import process_map_data as pmd
 import dijkstra
 import bellman_ford
+import floyd_warshall
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QWidget, QGroupBox,
@@ -232,7 +233,7 @@ class Application(QMainWindow):
         elif self.bellman_radio_btn.isChecked():
             shortest_paths, distances = self.run_bellman_ford_algorithm()
         elif self.floyd_radio_btn.isChecked():
-            shortest_paths = self.run_floyd_warshall_algorithm()
+            shortest_paths, distances = self.run_floyd_warshall_algorithm()
         else:
             assert False
 
@@ -306,8 +307,12 @@ class Application(QMainWindow):
         print(path)
         return [self.reader.get_coordinates_from_node_indices(path)], [distance]
 
-    def run_floyd_warshall_algorithm(self) -> tp.Union[np.ndarray, list]:
-        return []
+    def run_floyd_warshall_algorithm(self) -> tp.Tuple[list, list]:
+        assert self.reader is not None
+        start_index, end_index = list(self.index_to_marker_positions.keys())
+        path, distance = floyd_warshall.floyd_warshall(
+            graph=self.reader.adjacency_matrix, start=start_index, end=end_index)
+        return [self.reader.get_coordinates_from_node_indices(path)], [distance]
 
 
 if __name__ == "__main__":
