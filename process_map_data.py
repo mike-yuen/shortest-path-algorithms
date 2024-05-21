@@ -1,6 +1,7 @@
 import typing as tp
 import numpy as np
 import pyproj
+import networkx as nx
 
 from xml.etree import ElementTree
 
@@ -189,18 +190,45 @@ class OSMReader:
             adjacency_matrix[node0_idx, node1_idx] = weight
             if not edge.is_oneway:
                 adjacency_matrix[node1_idx, node0_idx] = weight
+
+        # TODO: re-correct adjacency matrix for case of more than one CC in the graph
+        # Define an adjacency matrix for a directed graph
+        adj_matrix = adjacency_matrix
+
+        # Create the directed graph from the adjacency matrix
+        G = nx.from_numpy_array(adj_matrix, create_using=nx.DiGraph)
+
+        # Find all weakly connected components
+        weakly_connected_components = list(nx.strongly_connected_components(G))
+        largest_cc = max(weakly_connected_components, key=len)
+
+        print("Weakly Connected Components:")
+        for component in weakly_connected_components:
+            if component != largest_cc:
+                adjacency_matrix[:, list(component)] = 0.
+                adjacency_matrix[list(component), :] = 0.
+        clean_clean_edges = []
+        for edge in clean_edges:
+            if id_to_node_index[edge.nodes[0].id] in largest_cc and id_to_node_index[edge.nodes[1].id] in largest_cc:
+                clean_clean_edges.append(edge)
         index_to_node = [id_to_node[_id] for _id in id_to_node_index]
         return OSMReader(
             index_to_node=index_to_node, edges=clean_edges,
             adjacency_matrix=adjacency_matrix, bounds=bounds)
 
-    def get_line_coordinates(self) -> np.ndarray:
+    def get_line_coordinates(self, return_colors=False) \
+            -> tp.Union[np.ndarray, tp.Tuple[np.ndarray, dict]]:
         line_node_coordinates = []
-        for edge in self.edges:
+        line_index_to_color = {}
+        for idx, edge in enumerate(self.edges):
             temp = []
             for node in edge.nodes:
                 temp.append(list(node.to_cartesian())[:-1])
             line_node_coordinates.append(temp)
+            if edge.is_oneway:
+                line_index_to_color[idx] = (0, 0, 0)
+        if return_colors:
+            return np.array(line_node_coordinates), line_index_to_color
         return np.array(line_node_coordinates)
 
     def get_node_coordinates(self) -> np.ndarray:

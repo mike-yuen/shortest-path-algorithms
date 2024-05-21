@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem, QDialog
 )
 from PySide6.QtCore import QPointF, QObject, Signal, Qt, QUrl
-from PySide6.QtGui import QPainter, QBrush, QPen, QFont
+from PySide6.QtGui import QPainter, QBrush, QPen, QFont, QColor
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCharts import QChartView, QChart, QLineSeries, QScatterSeries
 from jinja2 import Environment, FileSystemLoader
@@ -70,15 +70,20 @@ class ChartView(QWidget):
         self._selected_series = QScatterSeries()
         self._node_infos = None
 
-    def plot(self, points: np.ndarray):
+    def plot(self, points: np.ndarray, color_map: tp.Union[dict, None] = None):
         assert points.shape[1] == 2
         self._chart = QChart()
         self._chart.legend().hide()
         if self._title is not None:
             self._chart.setTitle(self._title)
         #
-        for nodes in points:
+        for idx, nodes in enumerate(points):
             line_series = QLineSeries()
+            if idx in color_map:
+                color = color_map[idx]
+                pen = QPen(QColor.fromRgb(*color))
+                pen.setWidth(3)
+                line_series.setPen(pen)
             for point in nodes:
                 line_series.append(*point)
             self._chart.addSeries(line_series)
@@ -253,9 +258,9 @@ class Application(QMainWindow):
             self, "Open File", CURRENT_DIR, "OSM file (*.osm)")
         if os.path.isfile(filepath[0]):
             self.reader = pmd.OSMReader.parse(filepath[0])
-            line_coordinates = self.reader.get_line_coordinates()
+            line_coordinates, line_idx_to_color = self.reader.get_line_coordinates(return_colors=True)
             node_coordinates = self.reader.get_node_coordinates()
-            self.chart_view.plot(line_coordinates)
+            self.chart_view.plot(line_coordinates, line_idx_to_color)
             self.chart_view.scatter(
                 node_coordinates,
                 node_infos=[(node.raw_lat, node.raw_lon)
