@@ -201,8 +201,6 @@ class OSMReader:
         # Find all weakly connected components
         weakly_connected_components = list(nx.strongly_connected_components(G))
         largest_cc = max(weakly_connected_components, key=len)
-
-        print("Weakly Connected Components:")
         for component in weakly_connected_components:
             if component != largest_cc:
                 adjacency_matrix[:, list(component)] = 0.
@@ -213,7 +211,7 @@ class OSMReader:
                 clean_clean_edges.append(edge)
         index_to_node = [id_to_node[_id] for _id in id_to_node_index]
         return OSMReader(
-            index_to_node=index_to_node, edges=clean_edges,
+            index_to_node=index_to_node, edges=clean_clean_edges,
             adjacency_matrix=adjacency_matrix, bounds=bounds)
 
     def get_line_coordinates(self, return_colors=False) \
