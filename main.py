@@ -7,6 +7,7 @@ import process_map_data as pmd
 import dijkstra
 import bellman_ford
 import floyd_warshall
+import yen
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QWidget, QGroupBox,
@@ -201,9 +202,12 @@ class Application(QMainWindow):
         self.bellman_radio_btn.setText('Bellman-Ford')
         self.floyd_radio_btn = QRadioButton(self)
         self.floyd_radio_btn.setText('Floyd-Warshall')
+        self.yen_radio_btn = QRadioButton(self)
+        self.yen_radio_btn.setText('Yen')
         algorithm_selection_layout.addWidget(self.dijkstra_radio_btn)
         algorithm_selection_layout.addWidget(self.bellman_radio_btn)
         algorithm_selection_layout.addWidget(self.floyd_radio_btn)
+        algorithm_selection_layout.addWidget(self.yen_radio_btn)
         # chart and web view
         chart_and_web_widget = QWidget()
         self.chart_view = ChartView(title='Graph', parent=self)
@@ -239,6 +243,8 @@ class Application(QMainWindow):
             shortest_paths, distances = self.run_bellman_ford_algorithm()
         elif self.floyd_radio_btn.isChecked():
             shortest_paths, distances = self.run_floyd_warshall_algorithm()
+        elif self.yen_radio_btn.isChecked():
+            shortest_paths, distances = self.run_yen_algorithm()
         else:
             assert False
 
@@ -318,6 +324,14 @@ class Application(QMainWindow):
         path, distance = floyd_warshall.floyd_warshall(
             graph=self.reader.adjacency_matrix, start=start_index, end=end_index)
         return [self.reader.get_coordinates_from_node_indices(path)], [distance]
+
+    def run_yen_algorithm(self) -> tp.Tuple[list, list]:
+        assert self.reader is not None
+        graph = self.reader.convert_adjacency_matrix_to_dict()
+        start_index, end_index = list(self.index_to_marker_positions.keys())
+        paths, distances = yen.yen(
+            graph=graph, source=start_index, target=end_index)
+        return [self.reader.get_coordinates_from_node_indices(path) for path in paths], distances
 
 
 if __name__ == "__main__":

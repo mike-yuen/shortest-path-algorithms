@@ -47,18 +47,18 @@
                 return `#${randomColor.padStart(6, '0')}`;
             }
 
-            function addPath(path, distance) {
+            function addPath(path, distance, index) {
                 var latLngs = [];
                 path.forEach(function(node) {
                     latLngs.push(L.latLng(node[0], node[1]));
                 });
-                var polyline = L.polyline(latLngs, {color: getRandomColor()}).addTo(map);
-                polyline.setText(Math.floor(distance, 2).toString() + ' m', {center: true, offset: 20});
+                var polyline = L.polyline(latLngs, {color: getRandomColor(), weight: 10 - 3 * index}).addTo(map);
+                polyline.setText(Math.floor(distance, 2).toString() + ' m', {center: Boolean(index), offset: 20 + Math.random() * 20});
                 map.fitBounds(polyline.getBounds());
             }
             {% if paths %}
                 {% for path in paths %}
-                    addPath({{path}}, {{distances[loop.index0]}});
+                    addPath({{path}}, {{distances[loop.index0]}}, {{loop.index0}});
                 {% endfor %}
             {% endif %}
         </script>

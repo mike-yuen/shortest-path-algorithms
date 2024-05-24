@@ -1,35 +1,40 @@
-import heapq
+import numpy as np
+import dijkstra
 
 
-def dijkstra(graph, start, end):
-    queue = [(0, start, [])]  # (cost, current_node, path)
-    seen = set()
-    mins = {start: 0}
+def remove_edges_from_graph(graph, start, end_nodes):
+    graph = graph.copy()
+    new_edges = []
+    for node, cost in graph.get(start, ()):
+        if node not in end_nodes:
+            new_edges.append((node, cost))
+    graph[start] = new_edges
+    return graph
 
-    while queue:
-        (cost, node, path) = heapq.heappop(queue)
-        if node in seen:
+
+def get_removed_nodes_from_paths(paths, source):
+    removed_nodes = set()
+    for path in paths:
+        indices = np.where(np.array(path, dtype=type(path[0])) == source)[0]
+        if len(indices) != 1:
             continue
-
-        seen.add(node)
-        path = path + [node]
-
-        if node == end:
-            return (cost, path)
-
-        for next_node, weight in graph.get(node, ()):
-            if next_node in seen:
-                continue
-            prev = mins.get(next_node, None)
-            next_cost = cost + weight
-            if prev is None or next_cost < prev:
-                mins[next_node] = next_cost
-                heapq.heappush(queue, (next_cost, next_node, path))
-
-    return float("inf"), []
+        removed_nodes.add(path[indices[0] + 1])
+    return removed_nodes
 
 
-def yen(graph, source, target, K):
+def get_cost_from_path(graph, path):
+    cost = 0.
+    if len(path) == 0:
+        return cost
+    for i, node in enumerate(path[:-1]):
+        edges = graph[node]
+        for second_node, c in edges:
+            if second_node == path[i + 1]:
+                cost += c
+    return cost
+
+
+def yen(graph, source, target, top=3):
     """
     Finds k shortest loopless paths from source to target in a graph,
     including their costs.
@@ -39,52 +44,46 @@ def yen(graph, source, target, K):
                mapping neighbors to their edge costs.
         source: The starting node.
         target: The destination node.
-        k: The number of shortest paths to find.
+        top: The number of shortest paths to find.
 
     Returns:
         A list of tuples containing (cost, path) for k shortest paths.
     """
-    paths = [dijkstra(graph.copy(), source, target)]  # Initialize with shortest path
+    best_cost, shortest_path = dijkstra.dijkstra1(graph, source, target)
+    best_shortest_paths = [(tuple(shortest_path), best_cost)]
+    traversed_paths = [shortest_path]
 
-    for _ in range(1, K):
-        candidate_paths = []
-        for cost, path in paths:
-            for i in range(1, len(path) - 1):
-                spur_node = path[i]
-                root_path = path[:i]
-                modified_graph = graph.copy()
-                for c, p in paths:
-                    if p[:i] == root_path:
-                        new_edge = modified_graph[p[i - 1]]
-                        new_edge = [(e, c) for e, c in new_edge if e != p[i]]
-                        modified_graph[p[i - 1]] = new_edge
-                for node in root_path:
-                    modified_graph.pop(node, None)
-                spur_cost, spur_path = dijkstra(modified_graph, spur_node, target)
-                if spur_path:
-                    total_path = root_path + spur_path[1:]
-                    if total_path not in [p[1] for p in paths + candidate_paths]:
-                        candidate_paths.append(([spur_path[0]] + path[i:], total_path))
-        if not candidate_paths:
-            break
-        candidate_paths.sort(key=lambda x: x[0])
-        paths.append(candidate_paths.pop(0))
+    for k in range(top):
+        candidate_path_to_cost = {}
+        for i, node in enumerate(best_shortest_paths[k][0][:-1]):
+            spur_node = node
+            root_path = best_shortest_paths[k][0][:i]
+            removed_nodes = get_removed_nodes_from_paths(traversed_paths, spur_node)
+            new_graph = remove_edges_from_graph(graph, spur_node, removed_nodes)
+            cost, spur_path = dijkstra.dijkstra1(new_graph, spur_node, target)
+            if not len(spur_path):
+                continue
+            total_path = root_path + tuple(spur_path)
+            traversed_paths.append(total_path)
+            root_cost = get_cost_from_path(graph, root_path + tuple(spur_path)[:1])
+            candidate_path_to_cost[tuple(total_path)] = cost + root_cost
+        if not len(candidate_path_to_cost.keys()):
+            continue
+        best_path = sorted(list(candidate_path_to_cost.items()), key=lambda item: item[0])[-1]
+        best_shortest_paths.append(best_path)  # TODO: get path with less number of nodes
 
-    return paths[:K]
+    return tuple(zip(*best_shortest_paths[: top]))
 
 
 if __name__ == '__main__':
     # Example usage
-    graph = {
-        "A": [('B', 2), ('C', 4)],
-        "B": [("D", 3), ("E", 1), ("A", 2)],
-        "C": [("D", 2), ("E", 5)],
+    Graph = {
+        "C": [('D', 3), ('E', 2)],
+        "E": [("D", 1), ("F", 2), ("G", 3)],
+        "F": [("H", 1), ("G", 2)],
         "D": [("F", 4)],
-        "E": [("F", 2)]
+        "G": [("H", 2)]
     }
 
-    source = "A"
-    target = "F"
-    k = 3
-    paths = yen(graph.copy(), source=source, target=target, K=k)
-    print(paths)
+    shortest_paths = yen(Graph, source="C", target="H", top=3)
+    print(shortest_paths)

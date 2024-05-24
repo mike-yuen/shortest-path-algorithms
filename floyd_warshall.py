@@ -10,16 +10,25 @@ def floyd_warshall(graph: np.ndarray, start: int, end: int) -> tp.Tuple[list, fl
         [(0., 0)], dtype=[('weight', float), ('index', int)]), n * n).reshape((n, n))
     s_graph[:, :]['weight'] = graph
     queue = [s_graph.copy()]
+    indices = np.arange(n)
     for k in range(n):
-        for i in range(n):
-            for j in range(n):
-                weights = [s_graph[i, j]['weight'],
-                           s_graph[i, k]['weight'] + s_graph[k, j]['weight']]
-                min_index = np.argmin(weights)
-                keep_index = s_graph[i, j]['index'] if min_index == 0 else k + 1
-                s_graph[i, j] = (weights[min_index], keep_index)
-        assert np.any(np.diag(s_graph['weight']) >= 0.), 'Negative Cycle'
-        queue.append(s_graph.copy())
+        current_graph = queue[-1]
+        change_indices = np.where(indices != k)[0]
+        row_weights = current_graph[k, change_indices]
+        col_weights = current_graph[change_indices, k]
+        prev_sub_matrix = queue[-1][change_indices, :][:, change_indices]
+        sub_matrix = col_weights[:, np.newaxis]['weight'] + row_weights['weight']
+        prev_weights = prev_sub_matrix['weight']
+        prev_indices = prev_sub_matrix['index']
+        decision_matrix = sub_matrix < prev_weights
+        prev_weights[decision_matrix] = sub_matrix[decision_matrix]
+        prev_indices[decision_matrix] = k + 1
+        prev_sub_matrix['weight'] = prev_weights
+        prev_sub_matrix['index'] = prev_indices
+        new_s_graph = current_graph.copy()
+        new_s_graph[np.ix_(change_indices, change_indices)] = prev_sub_matrix
+        assert np.any(np.diag(new_s_graph['weight']) >= 0.), 'Negative Cycle'
+        queue.append(new_s_graph)
     assert start in range(n) and end in range(n) and start != end
     entry = queue[-1][start, end]
     shortest_distance = entry['weight']
@@ -47,5 +56,7 @@ if __name__ == '__main__':
         [0, -5, -1, 0]
     ], dtype=float)
     path, distance = floyd_warshall(graph, 0, 2)
+    assert path == [0, 3, 3, 1, 1, 2]
+    assert np.isclose(distance, -3.0)
     print(path)
     print(distance)

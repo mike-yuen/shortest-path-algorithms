@@ -191,14 +191,9 @@ class OSMReader:
             if not edge.is_oneway:
                 adjacency_matrix[node1_idx, node0_idx] = weight
 
-        # TODO: re-correct adjacency matrix for case of more than one CC in the graph
-        # Define an adjacency matrix for a directed graph
-        adj_matrix = adjacency_matrix
-
-        # Create the directed graph from the adjacency matrix
-        G = nx.from_numpy_array(adj_matrix, create_using=nx.DiGraph)
-
-        # Find all weakly connected components
+        # re-correct adjacency matrix for case of more than one CC in the graph
+        G = nx.from_numpy_array(adjacency_matrix, create_using=nx.DiGraph)
+        # Find all strongly connected components
         weakly_connected_components = list(nx.strongly_connected_components(G))
         largest_cc = max(weakly_connected_components, key=len)
         for component in weakly_connected_components:
@@ -206,10 +201,20 @@ class OSMReader:
                 adjacency_matrix[:, list(component)] = 0.
                 adjacency_matrix[list(component), :] = 0.
         clean_clean_edges = []
+        removed_node_indices = []
         for edge in clean_edges:
-            if id_to_node_index[edge.nodes[0].id] in largest_cc and id_to_node_index[edge.nodes[1].id] in largest_cc:
+            node_idx_1 = id_to_node_index[edge.nodes[0].id]
+            node_idx_2 = id_to_node_index[edge.nodes[1].id]
+            if node_idx_1 not in largest_cc:
+                removed_node_indices.append(node_idx_1)
+            if node_idx_2 not in largest_cc:
+                removed_node_indices.append(node_idx_2)
+            if node_idx_1 in largest_cc and node_idx_2 in largest_cc:
                 clean_clean_edges.append(edge)
-        index_to_node = [id_to_node[_id] for _id in id_to_node_index]
+        index_to_node = [id_to_node[_id] for _id, idx in id_to_node_index.items()
+                         if idx not in removed_node_indices]
+        adjacency_matrix = np.delete(adjacency_matrix, removed_node_indices, axis=0)
+        adjacency_matrix = np.delete(adjacency_matrix, removed_node_indices, axis=1)
         return OSMReader(
             index_to_node=index_to_node, edges=clean_clean_edges,
             adjacency_matrix=adjacency_matrix, bounds=bounds)
