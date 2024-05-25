@@ -50,7 +50,7 @@ def yen(graph, source, target, top=3):
     Returns:
         A list of tuples containing (cost, path) for k shortest paths.
     """
-    best_cost, shortest_path = dijkstra.dijkstra1(graph, source, target)
+    best_cost, shortest_path = dijkstra.dijkstra(graph, source, target)
     shortest_paths = [(tuple(shortest_path), best_cost)]
     candidate_path_to_cost = {}
 
@@ -61,7 +61,7 @@ def yen(graph, source, target, top=3):
             removed_nodes = get_removed_share_same_root_nodes_from_paths(
                 shortest_paths, root_path + (spur_node,))
             new_graph = remove_edges_from_graph(graph, spur_node, removed_nodes)
-            cost, spur_path = dijkstra.dijkstra1(new_graph, spur_node, target)
+            cost, spur_path = dijkstra.dijkstra(new_graph, spur_node, target)
             if not len(spur_path):
                 continue
             total_path = root_path + tuple(spur_path)

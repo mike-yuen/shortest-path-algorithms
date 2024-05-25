@@ -1,35 +1,7 @@
-from functools import reduce
 import heapq
-from typing import Dict, List, Tuple
 
 
-def dijkstra(graph: Dict[str, List[Tuple[str, int]]], start: str, end: str):
-    infinity = reduce(lambda x, y: x + y, (i[1] for u in graph for i in graph[u]))
-    dist = dict.fromkeys(graph, infinity)
-    prev = dict.fromkeys(graph)
-    q = list(graph)
-
-    dist[start] = 0
-    while q:
-        u = min(q, key=lambda x: dist[x])
-        q.remove(u)
-        for v, w in graph[u]:
-            alt = dist[u] + w
-            if alt < dist[v]:
-                dist[v] = alt
-                prev[v] = u
-    # "way"
-    trav = []
-    temp = end
-    while temp != start:
-        trav.append(prev[temp])
-        temp = prev[temp]
-    trav.reverse()
-    trav.append(end)
-    return trav, dist[end]
-
-
-def dijkstra1(graph, start, end):
+def dijkstra(graph, start, end):
     queue = [(0, start, [])]  # (cost, current_node, path)
     seen = set()
     mins = {start: 0}
@@ -77,7 +49,4 @@ if __name__ == "__main__":
         "D": [("F", 4)],
         "G": [("H", 2)]
     }
-    print(dijkstra1(graph1, start="C", end="H"))
-    print(dijkstra1(graph, start="F", end="H"))
-
-    print(dijkstra(graph1, "C", "H"))  # TODO: this case failed
+    print(dijkstra(graph1, start="C", end="H"))

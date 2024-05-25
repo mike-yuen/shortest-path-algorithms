@@ -305,7 +305,7 @@ class Application(QMainWindow):
         assert self.reader is not None
         graph = self.reader.convert_adjacency_matrix_to_dict()
         start_index, end_index = list(self.index_to_marker_positions.keys())
-        path, distance = dijkstra.dijkstra(
+        distance, path = dijkstra.dijkstra(
             graph=graph, start=start_index, end=end_index)
         return [self.reader.get_coordinates_from_node_indices(path)], [distance]
 
