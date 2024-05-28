@@ -53,7 +53,7 @@
                     latLngs.push(L.latLng(node[0], node[1]));
                 });
                 var polyline = L.polyline(latLngs, {color: getRandomColor(), weight: 10 - 3 * index}).addTo(map);
-                polyline.setText(Math.floor(distance, 2).toString() + ' m', {center: Boolean(index), offset: 20 + Math.random() * 20});
+                polyline.setText(Math.floor(distance, 2).toString() + ' m', {center: Boolean(index), offset: 30 + Math.random() * 40});
                 map.fitBounds(polyline.getBounds());
             }
             {% if paths %}

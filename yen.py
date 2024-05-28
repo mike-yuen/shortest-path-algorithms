@@ -1,6 +1,8 @@
+import numpy as np
 import shortestpaths as sp
 import networkx as nx
 import dijkstra
+import process_map_data as pmd
 
 
 def remove_edges_from_graph(graph, start, end_nodes):
@@ -81,20 +83,39 @@ def yen(graph, source, target, top=3):
 
 
 if __name__ == '__main__':
-    # Example usage
-    Graph = {
-        "C": [('D', 3), ('E', 2)],
-        "E": [("D", 1), ("F", 2), ("G", 3)],
-        "F": [("H", 1), ("G", 2)],
-        "D": [("F", 4)],
-        "G": [("H", 2)]
-    }
+    # # Example usage
+    # Graph = {
+    #     "C": [('D', 3), ('E', 2)],
+    #     "E": [("D", 1), ("F", 2), ("G", 3)],
+    #     "F": [("H", 1), ("G", 2)],
+    #     "D": [("F", 4)],
+    #     "G": [("H", 2)]
+    # }
+    # G = nx.DiGraph()
+    # for s, neighbors in Graph.items():
+    #     for neighbor, weight in neighbors:
+    #         G.add_edge(s, neighbor, weight=weight)
+    # ref_s_paths, ref_best_costs = zip(*sp.k_shortest_paths(G, "C", "H", k=3, method='y'))
+    # s_paths, best_costs = yen(Graph, source="C", target="H", top=3)
+    # assert ref_s_paths == tuple(list(s) for s in s_paths)
+    # assert ref_best_costs == best_costs
+
+    reader = pmd.OSMReader.parse('data/turtle_lake_map_region.osm')
+    graph = reader.convert_adjacency_matrix_to_dict()
+    print("Number of nodes: ", len(reader.index_to_node))
+    print("Number of edges: ", len(reader.edges))
+    paths, distances = yen(graph, source=10, target=40)
+    print("Distance: ", distances)
+    print("Paths: ", paths)
     G = nx.DiGraph()
-    for s, neighbors in Graph.items():
+    for s, neighbors in graph.items():
         for neighbor, weight in neighbors:
             G.add_edge(s, neighbor, weight=weight)
-    ref_s_paths, ref_best_costs = zip(*sp.k_shortest_paths(G, "C", "H", k=3, method='y'))
-    s_paths, best_costs = yen(Graph, source="C", target="H", top=3)
-    assert ref_s_paths == tuple(list(s) for s in s_paths)
-    assert ref_best_costs == best_costs
+    ref_s_paths, ref_best_costs = zip(*sp.k_shortest_paths(G, 10, 40, k=3, method='y'))
+    print("Ref Distances: ", ref_best_costs)
+    print("Ref Paths: ", ref_s_paths)
+    for path1, path2 in zip(paths, ref_s_paths):
+        assert tuple(path1) == tuple(path2)
 
+    for cost1, cost2 in zip(distances, ref_best_costs):
+        assert np.isclose(cost1, cost2)

@@ -1,5 +1,6 @@
 import numpy as np
 import typing as tp
+import process_map_data as pmd
 
 
 def floyd_warshall(graph: np.ndarray, start: int, end: int) -> tp.Tuple[list, float]:
@@ -49,14 +50,21 @@ def trace_back_shortest_path(matrix_queue: list, queue_index: int, start: int, e
 
 
 if __name__ == '__main__':
-    graph = np.array([
-        [0, 1, 0, 4],
-        [2, 0, -2, 0],
-        [3, 0, 0, 0],
-        [0, -5, -1, 0]
-    ], dtype=float)
-    path, distance = floyd_warshall(graph, 0, 2)
-    assert path == [0, 3, 3, 1, 1, 2]
-    assert np.isclose(distance, -3.0)
-    print(path)
-    print(distance)
+    # graph = np.array([
+    #     [0, 1, 0, 4],
+    #     [2, 0, -2, 0],
+    #     [3, 0, 0, 0],
+    #     [0, -5, -1, 0]
+    # ], dtype=float)
+    # path, distance = floyd_warshall(graph, 0, 2)
+    # assert path == [0, 3, 3, 1, 1, 2]
+    # assert np.isclose(distance, -3.0)
+    # print(path)
+    # print(distance)
+    reader = pmd.OSMReader.parse('data/turtle_lake_map_region.osm')
+    graph = reader.adjacency_matrix
+    print("Number of nodes: ", len(reader.index_to_node))
+    print("Number of edges: ", len(reader.edges))
+    distance, path = floyd_warshall(graph, start=10, end=40)
+    print("Distance: ", distance)
+    print("Path: ", path)

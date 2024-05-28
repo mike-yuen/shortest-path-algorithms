@@ -1,4 +1,6 @@
 from typing import Dict, List, Tuple
+import process_map_data as pmd
+
 
 class Graph:
     def __init__(self, vertices):
@@ -71,35 +73,25 @@ def bellman_ford(graph: Dict[str, List[Tuple[str, int]]], start: str, end: str) 
         shortest_paths[destination] = path[::-1]
 
     return shortest_paths[end], distances[end]
-    # return distances, predecessors
 
 
 if __name__ == "__main__":
-    graph = {
-        'A': [('B', 20), ('G', 15)],
-        'B': [('A', 20), ('C', 8), ('D', 9)],
-        'C': [('B', 8), ('D', 6), ('E', 15), ('H', 10)],
-        'D': [('B', 9), ('C', 6), ('E', 7)],
-        'E': [('C', 15), ('D', 7), ('F', 22), ('G', 18)],
-        'F': [('E', 22)],
-        'G': [('A', 15), ('E', 18)],
-        'H': [('C', 10)]
-    }
-    print(bellman_ford(graph, "F", "H"))
+    # graph = {
+    #     'A': [('B', 20), ('G', 15)],
+    #     'B': [('A', 20), ('C', 8), ('D', 9)],
+    #     'C': [('B', 8), ('D', 6), ('E', 15), ('H', 10)],
+    #     'D': [('B', 9), ('C', 6), ('E', 7)],
+    #     'E': [('C', 15), ('D', 7), ('F', 22), ('G', 18)],
+    #     'F': [('E', 22)],
+    #     'G': [('A', 15), ('E', 18)],
+    #     'H': [('C', 10)]
+    # }
+    # print(bellman_ford(graph, "F", "H"))
+    reader = pmd.OSMReader.parse('data/turtle_lake_map_region.osm')
+    graph = reader.convert_adjacency_matrix_to_dict()
+    print("Number of nodes: ", len(reader.index_to_node))
+    print("Number of edges: ", len(reader.edges))
+    path, distance = bellman_ford(graph, start=10, end=40)
+    print("Distance: ", distance)
+    print("Path: ", path)
 
-# if __name__ == '__main__':
-#     vertices = ['A', 'B', 'C', 'D', 'E']
-#     graph = Graph(vertices)
-#     graph.add_edge('A', 'B', 4)
-#     graph.add_edge('A', 'C', 2)
-#     graph.add_edge('B', 'C', 3)
-#     graph.add_edge('B', 'D', 2)
-#     graph.add_edge('B', 'E', 3)
-#     graph.add_edge('C', 'B', 1)
-#     graph.add_edge('C', 'D', 4)
-#     graph.add_edge('C', 'E', 5)
-#     graph.add_edge('E', 'D', 1)
-
-#     bf = BellmanFord(graph, 'A')
-#     bf.run()
-#     print("Shortest path from A to D:", bf.get_shortest_path('D'))

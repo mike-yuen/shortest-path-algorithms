@@ -1,4 +1,5 @@
 import heapq
+import process_map_data as pmd
 
 
 def dijkstra(graph, start, end):
@@ -30,23 +31,18 @@ def dijkstra(graph, start, end):
 
 
 if __name__ == "__main__":
-    graph = {
-        'A': [('B', 20), ('G', 15)],
-        'B': [('A', 20), ('C', 8), ('D', 9)],
-        'C': [('B', 8), ('D', 6), ('E', 15), ('H', 10)],
-        'D': [('B', 9), ('C', 6), ('E', 7)],
-        'E': [('C', 15), ('D', 7), ('F', 22), ('G', 18)],
-        'F': [('E', 22)],
-        'G': [('A', 15), ('E', 18)],
-        'H': [('C', 10)]
-    }
-    print(dijkstra(graph, "F", "H"))
-
-    graph1 = {
-        "C": [('D', 3), ('E', 2)],
-        "E": [("D", 1), ("F", 2), ("G", 3)],
-        "F": [("H", 1), ("G", 2)],
-        "D": [("F", 4)],
-        "G": [("H", 2)]
-    }
-    print(dijkstra(graph1, start="C", end="H"))
+    # graph = {
+    #     "C": [('D', 3), ('E', 2)],
+    #     "E": [("D", 1), ("F", 2), ("G", 3)],
+    #     "F": [("H", 1), ("G", 2)],
+    #     "D": [("F", 4)],
+    #     "G": [("H", 2)]
+    # }
+    # print(dijkstra(graph, start="C", end="H"))
+    reader = pmd.OSMReader.parse('data/turtle_lake_map_region.osm')
+    graph = reader.convert_adjacency_matrix_to_dict()
+    print("Number of nodes: ", len(reader.index_to_node))
+    print("Number of edges: ", len(reader.edges))
+    distance, path = dijkstra(graph, start=10, end=40)
+    print("Distance: ", distance)
+    print("Path: ", path)
